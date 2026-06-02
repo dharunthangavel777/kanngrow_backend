@@ -19,7 +19,7 @@ export class AdminAuthController {
 
       // Check if email belongs to an admin
       // MOCK: Allow any email containing '@kangrow.ai' or explicit admin emails
-      if (!email.includes('@kangrow.ai') && email !== 'admin@kanngrow.com') {
+      if (!email.includes('@kangrow.ai') && email !== 'dharuncod@gmail.com') {
         res.status(403).json({ success: false, message: 'Unauthorized email' });
         return;
       }
