@@ -11,13 +11,16 @@ export class EmailService {
       this.transporter = nodemailer.createTransport(
         isGmail 
         ? {
-            service: 'gmail',
+            host: 'smtp.gmail.com',
+            port: 587,
+            secure: false, // Upgrades to TLS automatically via STARTTLS
+            requireTLS: true,
             auth: {
               user: env.SMTP_USER,
               pass: env.SMTP_PASS,
             },
-            connectionTimeout: 5000, // 5 seconds max
-            socketTimeout: 5000,
+            connectionTimeout: 10000,
+            socketTimeout: 10000,
           }
         : {
             host: env.SMTP_HOST,
