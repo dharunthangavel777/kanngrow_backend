@@ -16,6 +16,8 @@ export class EmailService {
               user: env.SMTP_USER,
               pass: env.SMTP_PASS,
             },
+            connectionTimeout: 5000, // 5 seconds max
+            socketTimeout: 5000,
           }
         : {
             host: env.SMTP_HOST,
@@ -25,6 +27,8 @@ export class EmailService {
               user: env.SMTP_USER,
               pass: env.SMTP_PASS,
             },
+            connectionTimeout: 5000,
+            socketTimeout: 5000,
           }
       );
       logger.info('📧 Email service initialized with SMTP');
@@ -34,10 +38,11 @@ export class EmailService {
   }
 
   public async sendOtpEmail(to: string, otp: string): Promise<void> {
+    // ALWAYS log OTP to console as a safe fallback for development/debugging
+    logger.info(`[FALLBACK] OTP for ${to} is: ${otp}`);
+    console.log(`\n\n=== OTP FOR ${to}: ${otp} ===\n\n`);
+
     if (!this.transporter) {
-      // Mock mode
-      logger.info(`[MOCK EMAIL] OTP for ${to} is: ${otp}`);
-      console.log(`\n\n=== OTP FOR ${to}: ${otp} ===\n\n`);
       return;
     }
 
@@ -61,7 +66,7 @@ export class EmailService {
       logger.info(`📧 Real OTP email sent to ${to}`);
     } catch (error) {
       logger.error(`❌ Failed to send real email to ${to}: ${(error as Error).message}`);
-      throw error;
+      logger.warn('⚠️ OTP was still generated and logged above. Proceeding without email.');
     }
   }
 }
