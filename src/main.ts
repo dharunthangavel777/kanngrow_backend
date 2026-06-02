@@ -27,6 +27,7 @@ initFirebase();
 
 // ── Application Setup ─────────────────────────────────────
 const app = express();
+app.set('trust proxy', 1); // Trust first proxy (e.g., Railway)
 
 // ── Security & Parsing ────────────────────────────────────
 app.use(helmet());
