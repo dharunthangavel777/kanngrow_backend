@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { getAuth } from '../core/config/firebase.config';
 import { logger } from '../core/config/logger.config';
+import { emailService } from '../core/utils/email.utils';
 
 // In-memory store for OTPs (For MVP only)
 // Key: email, Value: { otp: string, expiresAt: number }
@@ -33,9 +34,8 @@ export class AdminAuthController {
         expiresAt: Date.now() + 5 * 60 * 1000,
       });
 
-      // MOCK: Send OTP (Log to console)
-      logger.info(`[MOCK EMAIL] OTP for ${email} is: ${otp}`);
-      console.log(`\n\n=== OTP FOR ${email}: ${otp} ===\n\n`);
+      // Send Real OTP Email (falls back to MOCK if no SMTP config)
+      await emailService.sendOtpEmail(email, otp);
 
       res.status(200).json({
         success: true,
