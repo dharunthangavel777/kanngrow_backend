@@ -19,6 +19,9 @@ export const env = {
   FIREBASE_CLIENT_EMAIL: getRequiredEnv('FIREBASE_CLIENT_EMAIL'),
   FIREBASE_PRIVATE_KEY: getRequiredEnv('FIREBASE_PRIVATE_KEY').replace(/\\n/g, '\n'),
 
+  // Google OAuth
+  GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID || '',
+
   // OpenAI
   OPENAI_API_KEY: getRequiredEnv('OPENAI_API_KEY'),
   OPENAI_MODEL: process.env.OPENAI_MODEL || 'gpt-4o',
