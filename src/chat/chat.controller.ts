@@ -16,8 +16,15 @@ export class ChatController {
 
   async getSessions(req: Request, res: Response): Promise<void> {
     const { uid } = req as AuthenticatedRequest;
-    const sessions = await chatService.getSessions(uid);
-    res.json(successResponse({ sessions }));
+    const { includeRecent } = req.query;
+
+    if (includeRecent === 'true') {
+      const data = await chatService.getSessionsWithRecent(uid);
+      res.json(successResponse(data));
+    } else {
+      const sessions = await chatService.getSessions(uid);
+      res.json(successResponse({ sessions }));
+    }
   }
 
   async getMessages(req: Request, res: Response): Promise<void> {

@@ -66,6 +66,15 @@ export class ChatService {
     return snapshot.docs.map((d: any) => d.data() as ChatSessionDoc);
   }
 
+  async getSessionsWithRecent(uid: string): Promise<{ sessions: ChatSessionDoc[], recentMessages: MessageDoc[] }> {
+    const sessions = await this.getSessions(uid);
+    let recentMessages: MessageDoc[] = [];
+    if (sessions.length > 0) {
+      recentMessages = await this.getMessages(uid, sessions[0].id);
+    }
+    return { sessions, recentMessages };
+  }
+
   async getMessages(uid: string, sessionId: string): Promise<MessageDoc[]> {
     const snapshot = await this.db
       .collection(collections.users)
