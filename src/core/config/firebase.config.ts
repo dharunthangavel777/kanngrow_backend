@@ -54,6 +54,8 @@ export const collections = {
   ideas: 'ideas',
   notifications: 'notifications',
   onboardingState: 'onboardingState',
+  adminLogs: 'admin_logs',
+  adminLockouts: 'admin_lockouts',
 } as const;
 
 export type CollectionName = keyof typeof collections;
