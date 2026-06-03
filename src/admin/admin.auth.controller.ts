@@ -18,11 +18,15 @@ export class AdminAuthController {
         return;
       }
 
-      // Check if email belongs to an admin
-      // MOCK: Allow any email containing '@kangrow.ai' or explicit admin emails
-      if (!email.includes('@kangrow.ai') && email !== 'dharuncod@gmail.com') {
-        res.status(403).json({ success: false, message: 'Unauthorized email' });
-        return;
+      // Check if email exists in Firebase Auth (pre-registered admins only)
+      try {
+        await getAuth().getUserByEmail(email);
+      } catch (error: any) {
+        if (error.code === 'auth/user-not-found') {
+          res.status(403).json({ success: false, message: 'Unauthorized email' });
+          return;
+        }
+        throw error;
       }
 
       // Generate a 6-digit OTP
@@ -76,18 +80,17 @@ export class AdminAuthController {
       // OTP is valid
       otpStore.delete(email);
 
-      // Fetch or Create Firebase User
+      // Fetch Firebase User (must exist since it was validated in sendOtp)
       let uid: string;
       try {
         const userRecord = await getAuth().getUserByEmail(email);
         uid = userRecord.uid;
       } catch (error: any) {
         if (error.code === 'auth/user-not-found') {
-          const newUser = await getAuth().createUser({ email });
-          uid = newUser.uid;
-        } else {
-          throw error;
+          res.status(403).json({ success: false, message: 'Unauthorized email' });
+          return;
         }
+        throw error;
       }
 
       // Ensure user has admin claims
