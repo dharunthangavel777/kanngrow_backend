@@ -66,13 +66,13 @@ export class AuthController {
         }
       }
 
-      // 3. Sync to Firestore using existing service
-      const user = await authService.findOrCreateUser(uid, email);
-
-      // 4. Mint a Firebase Custom Token for the client to use
+      // 3. Mint a Firebase Custom Token for the client to use immediately
       const customToken = await getAuth().createCustomToken(uid);
 
-      res.json(successResponse({ customToken, user }));
+      // 4. Sync to Firestore in the background (fire-and-forget)
+      authService.findOrCreateUser(uid, email).catch(err => logger.error(`Firestore sync failed: ${err}`));
+
+      res.json(successResponse({ customToken, user: { uid, email } }));
     } catch (error: any) {
       logger.error(`Google auth verification failed: ${error.message}`);
       res.status(401).json(errorResponse('Invalid Google authentication'));
