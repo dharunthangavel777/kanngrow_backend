@@ -7,34 +7,18 @@ export class EmailService {
 
   constructor() {
     if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-      const isGmail = env.SMTP_HOST.includes('gmail');
-      this.transporter = nodemailer.createTransport(
-        isGmail 
-        ? {
-            host: 'smtp.gmail.com',
-            port: 587,
-            secure: false, // Upgrades to TLS automatically via STARTTLS
-            requireTLS: true,
-            auth: {
-              user: env.SMTP_USER,
-              pass: env.SMTP_PASS,
-            },
-            connectionTimeout: 10000,
-            socketTimeout: 10000,
-          }
-        : {
-            host: env.SMTP_HOST,
-            port: env.SMTP_PORT,
-            secure: env.SMTP_PORT === 465,
-            auth: {
-              user: env.SMTP_USER,
-              pass: env.SMTP_PASS,
-            },
-            connectionTimeout: 5000,
-            socketTimeout: 5000,
-          }
-      );
-      logger.info('📧 Email service initialized with SMTP');
+      this.transporter = nodemailer.createTransport({
+        host: env.SMTP_HOST,
+        port: env.SMTP_PORT,
+        secure: env.SMTP_PORT === 465, // true for 465, false for other ports
+        auth: {
+          user: env.SMTP_USER,
+          pass: env.SMTP_PASS,
+        },
+        connectionTimeout: 15000,
+        socketTimeout: 15000,
+      });
+      logger.info(`📧 Email service initialized with SMTP (Host: ${env.SMTP_HOST}, Port: ${env.SMTP_PORT})`);
     } else {
       logger.warn('⚠️ SMTP credentials not found. Email service will run in MOCK mode.');
     }
