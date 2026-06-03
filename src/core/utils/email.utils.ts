@@ -1,26 +1,15 @@
-import nodemailer from 'nodemailer';
 import { env } from '../config/env.config';
 import { logger } from '../config/logger.config';
 
 export class EmailService {
-  private transporter: nodemailer.Transporter | null = null;
+  private apiKey: string | undefined;
 
   constructor() {
-    if (env.SMTP_HOST && env.SMTP_USER && env.SMTP_PASS) {
-      this.transporter = nodemailer.createTransport({
-        host: env.SMTP_HOST,
-        port: env.SMTP_PORT,
-        secure: env.SMTP_PORT === 465, // true for 465, false for other ports
-        auth: {
-          user: env.SMTP_USER,
-          pass: env.SMTP_PASS,
-        },
-        connectionTimeout: 15000,
-        socketTimeout: 15000,
-      });
-      logger.info(`📧 Email service initialized with SMTP (Host: ${env.SMTP_HOST}, Port: ${env.SMTP_PORT})`);
+    this.apiKey = env.BREVO_API_KEY;
+    if (this.apiKey) {
+      logger.info('📧 Email service initialized with Brevo API');
     } else {
-      logger.warn('⚠️ SMTP credentials not found. Email service will run in MOCK mode.');
+      logger.warn('⚠️ BREVO_API_KEY not found. Email service will run in MOCK mode.');
     }
   }
 
@@ -29,17 +18,31 @@ export class EmailService {
     logger.info(`[FALLBACK] OTP for ${to} is: ${otp}`);
     console.log(`\n\n=== OTP FOR ${to}: ${otp} ===\n\n`);
 
-    if (!this.transporter) {
+    if (!this.apiKey) {
       return;
     }
 
     try {
-      await this.transporter.sendMail({
-        from: `"Kangrow AI Admin" <${env.SMTP_USER}>`,
-        to,
-        subject: 'Your Admin Login OTP - Kangrow AI',
-        text: `Your OTP for Kangrow AI Admin Portal is: ${otp}\n\nThis OTP is valid for 5 minutes.`,
-        html: `
+      const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': this.apiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          sender: {
+            name: 'Kangrow AI Admin',
+            email: env.BREVO_SENDER_EMAIL,
+          },
+          to: [
+            {
+              email: to,
+            },
+          ],
+          subject: 'Your Admin Login OTP - Kangrow AI',
+          textContent: `Your OTP for Kangrow AI Admin Portal is: ${otp}\n\nThis OTP is valid for 5 minutes.`,
+          htmlContent: `
           <div style="font-family: Arial, sans-serif; padding: 20px; color: #333;">
             <h2>Admin Login OTP</h2>
             <p>Your one-time password for the Kangrow AI Admin Portal is:</p>
@@ -49,10 +52,17 @@ export class EmailService {
             <p style="font-size: 12px; color: #888;">If you did not request this, please ignore this email.</p>
           </div>
         `,
+        }),
       });
-      logger.info(`📧 Real OTP email sent to ${to}`);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Brevo API Error (${response.status}): ${errorText}`);
+      }
+
+      logger.info(`📧 Real OTP email sent to ${to} via Brevo`);
     } catch (error) {
-      logger.error(`❌ Failed to send real email to ${to}: ${(error as Error).message}`);
+      logger.error(`❌ Failed to send real email to ${to} via Brevo: ${(error as Error).message}`);
       logger.warn('⚠️ OTP was still generated and logged above. Proceeding without email.');
     }
   }
