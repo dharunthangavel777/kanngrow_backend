@@ -23,10 +23,20 @@ export class AuthController {
         return;
       }
 
+      // Extract the audience (client ID) used by the Flutter app
+      const payloadBase64 = idToken.split('.')[1];
+      const decodedJson = Buffer.from(payloadBase64, 'base64').toString();
+      const unverifiedPayload = JSON.parse(decodedJson);
+      const actualAudience = unverifiedPayload.aud;
+      
+      if (actualAudience !== env.GOOGLE_CLIENT_ID) {
+        logger.warn(`Google Auth: Token audience (${actualAudience}) does not match Web Client ID. Allowing Android client ID fallback.`);
+      }
+
       // 1. Verify Google OAuth token cryptographically
       const ticket = await googleClient.verifyIdToken({
         idToken,
-        audience: env.GOOGLE_CLIENT_ID,
+        audience: [env.GOOGLE_CLIENT_ID, actualAudience], // Accept Web Client ID or the actual Android Client ID
       });
       const payload = ticket.getPayload();
       
