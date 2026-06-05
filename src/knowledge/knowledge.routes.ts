@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { KnowledgeService } from './knowledge.service';
+import { KnowledgeSync } from './knowledge.sync';
 import { adminMiddleware } from '../core/middleware/admin.middleware';
 import { authMiddleware } from '../core/middleware/auth.middleware';
 
@@ -197,6 +198,22 @@ router.get('/stats', authMiddleware, adminMiddleware, async (_req: Request, res:
   try {
     const stats = await knowledgeService.getStats();
     res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ success: false, error: (error as Error).message });
+  }
+});
+
+// POST /api/v1/knowledge/sync — Sync knowledge base from website docs.html (Admin only)
+router.post('/sync', authMiddleware, adminMiddleware, async (req: Request, res: Response) => {
+  try {
+    const adminUid = (req as any).uid || 'system';
+    const syncService = new KnowledgeSync();
+    const result = await syncService.syncWebsiteDocs('https://kanngrow.com/docs.html', adminUid);
+    res.json({
+      success: true,
+      message: 'Knowledge base synced successfully from website!',
+      data: result
+    });
   } catch (error) {
     res.status(500).json({ success: false, error: (error as Error).message });
   }

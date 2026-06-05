@@ -26,4 +26,7 @@ router.post('/broadcast', adminController.sendBroadcast);
 router.get('/ai-usage', adminController.getAIUsageStats);
 router.post('/ai-settings', adminController.updateOpenAISettings);
 
+// ── Local Ingestion ───────────────────────────────────────
+router.post('/import-local-html', adminController.importLocalHtml);
+
 export default router;
