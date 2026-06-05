@@ -65,12 +65,12 @@ export class KnowledgeService {
       query = query.where('demandLevel', '==', filters.demandLevel);
     }
 
-    const snapshot = await query
-      .orderBy('kangrowScore', 'desc')
-      .limit(filters?.limit || 50)
-      .get();
+    const snapshot = await query.get();
 
     let ideas = snapshot.docs.map((d) => d.data() as BusinessIdea);
+
+    // Sort in memory by kangrowScore descending
+    ideas.sort((a, b) => (b.kangrowScore || 0) - (a.kangrowScore || 0));
 
     // Post-query filters (Firestore can't do these natively without composite indexes)
     if (filters?.investmentMax) {
@@ -82,6 +82,11 @@ export class KnowledgeService {
           idea.targetStates.length === 0 ||
           idea.targetStates.some((s) => s.toLowerCase() === filters.state!.toLowerCase()),
       );
+    }
+
+    // Apply limit
+    if (filters?.limit) {
+      ideas = ideas.slice(0, filters.limit);
     }
 
     return ideas;
@@ -121,8 +126,13 @@ export class KnowledgeService {
 
     if (category) query = query.where('category', '==', category);
 
-    const snapshot = await query.orderBy('rating', 'desc').limit(50).get();
-    return snapshot.docs.map((d) => d.data() as Vendor);
+    const snapshot = await query.get();
+    const vendors = snapshot.docs.map((d) => d.data() as Vendor);
+    
+    // Sort in memory by rating descending
+    vendors.sort((a, b) => (b.rating || 0) - (a.rating || 0));
+    
+    return vendors;
   }
 
   // ── GOVT SCHEMES ────────────────────────────────────────────────────────────
@@ -201,8 +211,13 @@ export class KnowledgeService {
 
     if (type) query = query.where('type', '==', type);
 
-    const snapshot = await query.orderBy('opportunityScore', 'desc').limit(30).get();
-    return snapshot.docs.map((d) => d.data() as MarketReport);
+    const snapshot = await query.get();
+    const reports = snapshot.docs.map((d) => d.data() as MarketReport);
+    
+    // Sort in memory by opportunityScore descending
+    reports.sort((a, b) => (b.opportunityScore || 0) - (a.opportunityScore || 0));
+    
+    return reports.slice(0, 30);
   }
 
   // ── STATS ───────────────────────────────────────────────────────────────────

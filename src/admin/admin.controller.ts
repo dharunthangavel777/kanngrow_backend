@@ -366,7 +366,7 @@ export class AdminController {
       const db = getFirestore();
       
       const adminUid = (req as any).uid || 'system';
-      const filePath = path.resolve('c:/flutter/ projects/kanngrow/kanngrow knowledge base/kangrow_india_knowledge_base.html');
+      const filePath = path.join(__dirname, '..', '..', '..', 'kanngrow knowledge base', 'kangrow_india_knowledge_base.html');
       
       if (!fs.existsSync(filePath)) {
         res.status(400).json({ success: false, error: `Local HTML knowledge base file not found at path: ${filePath}` });
