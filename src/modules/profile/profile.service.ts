@@ -13,6 +13,7 @@ export interface BusinessProfile {
   userType?: string;
   experienceLevel?: string;
   productCategory?: string;
+  state?: string;
   updatedAt: string;
 }
 

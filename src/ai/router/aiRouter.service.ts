@@ -15,7 +15,7 @@ export class AIRouterService {
    * Analyzes the user's message and routes it to the appropriate AI module(s).
    * This is the core "brain" of Kangrow AI.
    */
-  async detectIntent(userMessage: string): Promise<RouterResult> {
+  async detectIntent(userMessage: string, uid = 'anonymous'): Promise<RouterResult> {
     try {
       const result = await this.ai.completeJSON<{
         intent: string;
@@ -42,6 +42,8 @@ Respond ONLY with JSON: { "intent": "<intent_value>", "confidence": 0.95 }`,
         responseFormat: 'json',
         maxTokens: 100,
         temperature: 0.1,
+        uid,
+        feature: 'ai-router',
       });
 
       const intent = (result.intent as AiIntent) || AI_INTENTS.GENERAL_CHAT;

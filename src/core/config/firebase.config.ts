@@ -56,6 +56,14 @@ export const collections = {
   onboardingState: 'onboardingState',
   adminLogs: 'admin_logs',
   adminLockouts: 'admin_lockouts',
+  // ── Stage 2: Kangrow Knowledge Base ───────────────────
+  knowledge_ideas: 'knowledge_ideas',
+  knowledge_vendors: 'knowledge_vendors',
+  knowledge_govt_schemes: 'knowledge_govt_schemes',
+  knowledge_market_reports: 'knowledge_market_reports',
+  // ── Token Usage Tracking ───────────────────────────────
+  openai_usage_logs: 'openai_usage_logs',
+  platform_config: 'platform_config',
 } as const;
 
 export type CollectionName = keyof typeof collections;

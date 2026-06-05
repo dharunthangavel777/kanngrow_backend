@@ -19,6 +19,7 @@ export class QuestionGenerator {
   async generateNextQuestion(
     answeredQuestions: Record<string, string>,
     questionsAsked: number,
+    uid = 'anonymous',
   ): Promise<OnboardingQuestion | null> {
     // Only generate up to 3 dynamic questions total
     if (questionsAsked >= 3) return null;
@@ -42,6 +43,8 @@ export class QuestionGenerator {
         responseFormat: 'json',
         maxTokens: 512,
         temperature: 0.8,
+        uid,
+        feature: 'onboarding',
       });
 
       return {

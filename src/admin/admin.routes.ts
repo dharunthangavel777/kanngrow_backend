@@ -16,9 +16,14 @@ router.get('/dashboard', adminController.getDashboardStats);
 // User management
 router.get('/users', adminController.getUsers);
 router.post('/users/:id/suspend', adminController.suspendUser);
+router.post('/users/:id/restore', adminController.restoreUser);
 router.delete('/users/:id', adminController.deleteUser);
 
 // Platform settings / broadcasts
 router.post('/broadcast', adminController.sendBroadcast);
+
+// ── AI Usage Tracking & Cost Controls ─────────────────────
+router.get('/ai-usage', adminController.getAIUsageStats);
+router.post('/ai-settings', adminController.updateOpenAISettings);
 
 export default router;

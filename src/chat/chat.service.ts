@@ -1,11 +1,14 @@
 import { getFirestore, collections } from '../core/config/firebase.config';
-import { OpenAIProvider, ChatMessage } from '../ai/providers/openai.provider';
+import { OpenAIProvider, ChatMessage, getPlatformSettings } from '../ai/providers/openai.provider';
 import { AIRouterService } from '../ai/router/aiRouter.service';
 import { MemoryService } from '../ai/memory/memory.service';
 import { ContextBuilder } from '../ai/context/contextBuilder';
 import { ProfileService } from '../modules/profile/profile.service';
+import { KnowledgeSearchService } from '../knowledge/knowledge.search';
 import { generateId, toTimestamp } from '../core/utils/helpers';
 import { logger } from '../core/config/logger.config';
+import { ValidationService } from '../ecommerce/validation-engine/validation.service';
+import { BusinessPlanService } from '../ecommerce/business-planner/businessPlan.service';
 
 export interface ChatSessionDoc {
   id: string;
@@ -33,6 +36,7 @@ export class ChatService {
   private memory = new MemoryService();
   private contextBuilder = new ContextBuilder();
   private profileService = new ProfileService();
+  private knowledgeSearch = new KnowledgeSearchService();
 
   async createSession(uid: string, title?: string): Promise<ChatSessionDoc> {
     const id = generateId();
@@ -95,30 +99,36 @@ export class ChatService {
     userMessage: string,
   ): Promise<{ message: MessageDoc; usedModules: string[] }> {
     // 1. Detect intent
-    const { intent, usedModules } = await this.router.detectIntent(userMessage);
+    const { intent, usedModules } = await this.router.detectIntent(userMessage, uid);
     logger.debug(`Chat intent: ${intent}, modules: ${usedModules.join(', ')}`);
 
-    // 2. Build context from profile + memory
-    const [profile, facts] = await Promise.all([
+    // 2. Build context from profile + memory + knowledge base (RAG)
+    const [profile, facts, platformSettings] = await Promise.all([
       this.profileService.getProfile(uid),
       this.memory.getMemoryFacts(uid),
+      getPlatformSettings(),
     ]);
-    const { systemPrompt } = this.contextBuilder.build(profile, facts);
+    const knowledgeResult = await this.knowledgeSearch.search(userMessage, profile);
+    const knowledgeContext = this.knowledgeSearch.formatAsContext(knowledgeResult);
+    const { systemPrompt, profileSummary, knowledgeInjected } = this.contextBuilder.build(profile, facts, knowledgeContext);
 
-    // 3. Load recent history (last 10 messages)
+    // 3. Load recent history — limit from platform config (default 6)
+    const maxHistory = platformSettings.maxHistoryLimit ?? 6;
     const history = await this.getMessages(uid, sessionId);
-    const historyMessages: ChatMessage[] = history.slice(-10).map((m) => ({
+    const historyMessages: ChatMessage[] = history.slice(-maxHistory).map((m) => ({
       role: m.role,
       content: m.content,
     }));
 
-    // 4. Call OpenAI
+    // 4. Call OpenAI — pass uid + feature for cost tracking
     const aiContent = await this.ai.complete({
       messages: [
         { role: 'system', content: systemPrompt },
         ...historyMessages,
         { role: 'user', content: userMessage },
       ],
+      uid,
+      feature: 'chat',
     });
 
     // 5. Save user message
@@ -133,7 +143,7 @@ export class ChatService {
     };
 
     // 5. Generate Dynamic Metadata for Custom Cards
-    const metadata: Record<string, any> = { usedModules };
+    const metadata: Record<string, any> = { usedModules, knowledgeInjected };
 
     if (usedModules.includes('Product Idea Generator')) {
       try {
@@ -145,7 +155,9 @@ export class ChatService {
             },
             { role: 'user', content: `Generate 3 distinct and creative product ideas for: ${userMessage}` }
           ],
-          responseFormat: 'json'
+          responseFormat: 'json',
+          uid,
+          feature: 'idea-generator',
         });
         metadata.ideas = result.ideas;
       } catch (err) {
@@ -155,16 +167,8 @@ export class ChatService {
 
     if (usedModules.includes('Product Validation')) {
       try {
-        const result = await this.ai.completeJSON<any>({
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an e-commerce validation assistant. You must respond with a JSON object containing "overallScore" (a number from 0 to 100) and a "nextSteps" array of strings representing validation tasks. Schema: { "overallScore": number, "nextSteps": string[] }'
-            },
-            { role: 'user', content: `Validate this e-commerce product concept: ${userMessage}` }
-          ],
-          responseFormat: 'json'
-        });
+        const validationService = new ValidationService();
+        const result = await validationService.validateProduct(uid, userMessage, profileSummary);
         metadata.validation = result;
       } catch (err) {
         logger.warn(`Failed to validate product for metadata: ${(err as Error).message}`);
@@ -173,17 +177,38 @@ export class ChatService {
 
     if (usedModules.includes('E-commerce Roadmap') || usedModules.includes('Business Plan Generator')) {
       try {
-        const result = await this.ai.completeJSON<any>({
-          messages: [
-            {
-              role: 'system',
-              content: 'You are an e-commerce business planner. You must respond with a JSON object containing a "milestones" array. Each milestone object must have a "phase" (string, e.g. "Week 1-2") and a "tasks" (array of strings). Schema: { "milestones": [ { "phase": "string", "tasks": ["string"] } ] }'
-            },
-            { role: 'user', content: `Create a step-by-step launch roadmap for: ${userMessage}` }
-          ],
-          responseFormat: 'json'
-        });
-        metadata.roadmap = result;
+        const businessPlanService = new BusinessPlanService();
+        if (usedModules.includes('Business Plan Generator')) {
+          const result = await businessPlanService.generateBusinessPlan(uid, profileSummary);
+          metadata.roadmap = {
+            milestones: [
+              {
+                phase: 'Executive Summary',
+                tasks: [result.plan.executiveSummary || '']
+              },
+              {
+                phase: 'Revenue Model',
+                tasks: [
+                  `Primary Stream: ${result.plan.revenueModel?.primaryStream || ''}`,
+                  `Projected Year 1 Revenue: ${result.plan.revenueModel?.projectedYear1Revenue || ''}`,
+                  `Pricing Strategy: ${result.plan.revenueModel?.pricingStrategy || ''}`
+                ]
+              },
+              {
+                phase: 'Marketing Strategy',
+                tasks: [
+                  `CAC Estimate: ${result.plan.marketingStrategy?.cac || ''}`,
+                  `Budget: ${result.plan.marketingStrategy?.budget || ''}`,
+                  ...(result.plan.marketingStrategy?.channels || [])
+                ]
+              }
+            ]
+          };
+        } else {
+          const goal = profile?.goal || 'Build a profitable store';
+          const result = await businessPlanService.generateRoadmap(uid, profileSummary, goal);
+          metadata.roadmap = result.roadmap;
+        }
       } catch (err) {
         logger.warn(`Failed to generate roadmap for metadata: ${(err as Error).message}`);
       }

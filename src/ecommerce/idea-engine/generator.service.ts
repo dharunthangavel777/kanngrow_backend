@@ -47,6 +47,8 @@ export class IdeaGeneratorService {
       responseFormat: 'json',
       maxTokens: 2000,
       temperature: 0.8,
+      uid,
+      feature: 'idea-generator',
     });
 
     const ideas: ProductIdea[] = result.ideas.map((idea) => ({

@@ -21,7 +21,7 @@ export class OnboardingController {
       questionsAsked: number;
     };
 
-    const question = await generator.generateNextQuestion(answeredQuestions, questionsAsked);
+    const question = await generator.generateNextQuestion(answeredQuestions, questionsAsked, uid);
     res.json(successResponse({ question }));
   }
 

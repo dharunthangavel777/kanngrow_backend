@@ -19,6 +19,8 @@ import { ideaRoutes } from './ecommerce/idea-engine/idea.routes';
 import { validationRoutes } from './ecommerce/validation-engine/validation.routes';
 import { businessPlanRoutes } from './ecommerce/business-planner/businessPlan.routes';
 import { onboardingRoutes } from './ai/onboarding-engine/onboarding.routes';
+import { knowledgeRoutes } from './knowledge/knowledge.routes';
+import { marketRoutes } from './market-intelligence/market.routes';
 import adminRoutes from './admin/admin.routes';
 import adminAuthRoutes from './admin/admin.auth.routes';
 
@@ -63,6 +65,8 @@ app.use(`${API}/ecommerce/ideas`, ideaRoutes);
 app.use(`${API}/ecommerce/validate`, validationRoutes);
 app.use(`${API}/ecommerce/business-plan`, businessPlanRoutes);
 app.use(`${API}/onboarding`, onboardingRoutes);
+app.use(`${API}/knowledge`, knowledgeRoutes);
+app.use(`${API}/market`, marketRoutes);
 app.use(`${API}/admin`, adminRoutes);
 
 // ── 404 ───────────────────────────────────────────────────

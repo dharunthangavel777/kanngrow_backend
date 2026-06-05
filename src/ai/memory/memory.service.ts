@@ -67,6 +67,8 @@ If no meaningful facts, return { "facts": [] }`,
         responseFormat: 'json',
         maxTokens: 512,
         temperature: 0.3,
+        uid,
+        feature: 'memory-extraction',
       });
 
       for (const item of extracted.facts) {
