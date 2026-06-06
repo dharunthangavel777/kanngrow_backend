@@ -1,3 +1,4 @@
+import * as admin from 'firebase-admin';
 import { getFirestore, collections } from '../config/firebase.config';
 import { logger } from '../config/logger.config';
 import { initFirebase } from '../config/firebase.config';
@@ -179,51 +180,52 @@ const plans: PlanData[] = [
     updatedAt: new Date().toISOString(),
     updatedBy: 'system',
   },
-];
+];export async function seedSaaS(db: admin.firestore.Firestore): Promise<void> {
+  logger.info('Starting SaaS Firestore Database Seed...');
 
-async function seed(): Promise<void> {
-  try {
-    logger.info('Starting SaaS Firestore Database Seed...');
-
-    // 1. Seed subscription plans
-    for (const plan of plans) {
-      await db.collection(collections.subscription_plans).doc(plan.id).set(plan);
-      logger.info(`Successfully seeded plan: ${plan.id}`);
-    }
-
-    // 2. Seed default platform settings
-    const openaiSettingsRef = db.collection(collections.platform_config).doc('openai_settings');
-    const openaiSettingsSnap = await openaiSettingsRef.get();
-    if (!openaiSettingsSnap.exists) {
-      await openaiSettingsRef.set({
-        maxHistoryLimit: 6,
-        maxTokensMultiplier: 1.0,
-        tierDownModel: false,
-        updatedAt: new Date().toISOString(),
-      });
-      logger.info('Successfully seeded platform_config/openai_settings');
-    }
-
-    const adminSettingsRef = db.collection(collections.platform_config).doc('admin_settings');
-    const adminSettingsSnap = await adminSettingsRef.get();
-    if (!adminSettingsSnap.exists) {
-      await adminSettingsRef.set({
-        limitTokens: 1000000,
-        useGPT4o: true,
-        useClaude: false,
-        maintenanceMode: false,
-        pushNotifications: true,
-        updatedAt: new Date().toISOString(),
-      });
-      logger.info('Successfully seeded platform_config/admin_settings');
-    }
-
-    logger.info('🎉 SaaS Firestore Database Seed completed successfully!');
-    process.exit(0);
-  } catch (error) {
-    logger.error(`❌ SaaS Seed failed: ${(error as Error).message}`);
-    process.exit(1);
+  // 1. Seed subscription plans
+  for (const plan of plans) {
+    await db.collection(collections.subscription_plans).doc(plan.id).set(plan);
+    logger.info(`Successfully seeded plan: ${plan.id}`);
   }
+
+  // 2. Seed default platform settings
+  const openaiSettingsRef = db.collection(collections.platform_config).doc('openai_settings');
+  const openaiSettingsSnap = await openaiSettingsRef.get();
+  if (!openaiSettingsSnap.exists) {
+    await openaiSettingsRef.set({
+      maxHistoryLimit: 6,
+      maxTokensMultiplier: 1.0,
+      tierDownModel: false,
+      updatedAt: new Date().toISOString(),
+    });
+    logger.info('Successfully seeded platform_config/openai_settings');
+  }
+
+  const adminSettingsRef = db.collection(collections.platform_config).doc('admin_settings');
+  const adminSettingsSnap = await adminSettingsRef.get();
+  if (!adminSettingsSnap.exists) {
+    await adminSettingsRef.set({
+      limitTokens: 1000000,
+      useGPT4o: true,
+      useClaude: false,
+      maintenanceMode: false,
+      pushNotifications: true,
+      updatedAt: new Date().toISOString(),
+    });
+    logger.info('Successfully seeded platform_config/admin_settings');
+  }
+
+  logger.info('🎉 SaaS Firestore Database Seed completed successfully!');
 }
 
-seed();
+if (typeof require !== 'undefined' && require.main === module) {
+  seedSaaS(db)
+    .then(() => {
+      process.exit(0);
+    })
+    .catch((error) => {
+      logger.error(`❌ SaaS Seed failed: ${(error as Error).message}`);
+      process.exit(1);
+    });
+}

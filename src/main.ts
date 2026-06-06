@@ -3,7 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import { env } from './core/config/env.config';
-import { initFirebase } from './core/config/firebase.config';
+import { initFirebase, getFirestore, collections } from './core/config/firebase.config';
 import { logger } from './core/config/logger.config';
 import { errorMiddleware } from './core/middleware/error.middleware';
 import { rateLimitMiddleware } from './core/middleware/rateLimit.middleware';
@@ -27,6 +27,23 @@ import { billingRoutes } from './modules/billing/billing.routes';
 
 // ── Initialize Firebase ───────────────────────────────────
 initFirebase();
+
+// ── Auto-Seed Database if Empty ───────────────────────────
+(async () => {
+  try {
+    const db = getFirestore();
+    const plansSnap = await db.collection(collections.subscription_plans).limit(1).get();
+    if (plansSnap.empty) {
+      logger.info('SaaS: No subscription plans found in database. Auto-seeding default plans and configurations...');
+      const { seedSaaS } = await import('./core/utils/seed_saas');
+      await seedSaaS(db);
+    } else {
+      logger.info('SaaS: Subscription plans already seeded.');
+    }
+  } catch (error) {
+    logger.error(`⚠️ SaaS Auto-Seeding check failed: ${(error as Error).message}`);
+  }
+})();
 
 // ── Application Setup ─────────────────────────────────────
 const app = express();
