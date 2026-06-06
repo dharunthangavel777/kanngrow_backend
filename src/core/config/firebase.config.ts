@@ -68,6 +68,8 @@ export const collections = {
   subscription_plans: 'subscription_plans',
   user_overrides: 'user_overrides',
   organizations: 'organizations',
+  user_subscriptions: 'user_subscriptions',
+  audit_logs: 'audit_logs',
 } as const;
 
 export type CollectionName = keyof typeof collections;

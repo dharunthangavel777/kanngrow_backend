@@ -12,12 +12,38 @@ export class AdminController {
     try {
       const db = getFirestore();
 
-      const [usersSnap, knowledgeStats] = await Promise.all([
+      const [
+        usersSnap,
+        knowledgeStats,
+        standardSnap,
+        premiumSnap,
+        enterpriseSnap,
+        paidSnap,
+        adminAssignedSnap,
+        trialSnap,
+        lifetimeSnap,
+      ] = await Promise.all([
         db.collection(collections.users).count().get(),
         knowledgeService.getStats(),
+        db.collection(collections.users).where('subscription.tier', '==', 'standard').count().get(),
+        db.collection(collections.users).where('subscription.tier', '==', 'premium').count().get(),
+        db.collection(collections.users).where('subscription.tier', '==', 'enterprise').count().get(),
+        db.collection(collections.users).where('subscription.sourceType', '==', 'payment').count().get(),
+        db.collection(collections.users).where('subscription.sourceType', '==', 'admin_assignment').count().get(),
+        db.collection(collections.users).where('subscription.sourceType', '==', 'trial').count().get(),
+        db.collection(collections.users).where('subscription.isLifetime', '==', true).count().get(),
       ]);
 
       const totalUsers = usersSnap.data().count;
+      const standardUsers = standardSnap.data().count;
+      const premiumUsers = premiumSnap.data().count;
+      const enterpriseUsers = enterpriseSnap.data().count;
+      const freeUsers = Math.max(0, totalUsers - standardUsers - premiumUsers - enterpriseUsers);
+
+      const paidSubscribers = paidSnap.data().count;
+      const adminAssignedSubscribers = adminAssignedSnap.data().count;
+      const trialSubscribers = trialSnap.data().count;
+      const lifetimeSubscribers = lifetimeSnap.data().count;
 
       // Count total chat messages across all users (approximate via sessions)
       let totalChats = 0;
@@ -35,6 +61,14 @@ export class AdminController {
           totalUsers,
           totalChats,
           knowledgeBase: knowledgeStats,
+          freeUsers,
+          standardUsers,
+          premiumUsers,
+          enterpriseUsers,
+          paidSubscribers,
+          adminAssignedSubscribers,
+          trialSubscribers,
+          lifetimeSubscribers,
           // MRR and growth are business KPIs — to be tracked later with subscription system
           mrr: 0,
           growth: 'N/A',
@@ -408,7 +442,7 @@ export class AdminController {
   public assignUserPlan = async (req: Request, res: Response): Promise<void> => {
     try {
       const { id } = req.params;
-      const { tier, status, promoOverride } = req.body;
+      const { tier, status, source_type, is_lifetime, expiry_date, notes } = req.body;
       const db = getFirestore();
 
       if (!tier || !['free', 'standard', 'premium', 'enterprise'].includes(tier)) {
@@ -416,23 +450,93 @@ export class AdminController {
         return;
       }
 
+      // 1. Fetch target user
+      const userRef = db.collection(collections.users).doc(id);
+      const userSnap = await userRef.get();
+      if (!userSnap.exists) {
+        res.status(404).json({ success: false, error: 'User not found' });
+        return;
+      }
+      const userData = userSnap.data()!;
+      const userName = userData.displayName || userData.name || 'Unknown User';
+      const previousPlan = userData.subscription?.tier || 'free';
+
+      // 2. Fetch admin details
+      const adminUid = (req as any).uid || 'admin';
+      let adminName = 'Super Admin';
+      try {
+        const adminSnap = await db.collection(collections.users).doc(adminUid).get();
+        if (adminSnap.exists) {
+          adminName = adminSnap.data()?.displayName || adminSnap.data()?.name || adminSnap.data()?.email || 'Super Admin';
+        }
+      } catch (err) {
+        logger.warn(`Failed to fetch admin name: ${(err as Error).message}`);
+      }
+
+      // 3. Create Subscription Record
+      const subscriptionId = db.collection(collections.user_subscriptions).doc().id;
+      const subscriptionRecord = {
+        id: subscriptionId,
+        user_id: id,
+        plan_id: tier,
+        source_type: source_type || 'admin_assignment',
+        assigned_by_admin_id: adminUid,
+        assigned_at: new Date().toISOString(),
+        start_date: new Date().toISOString(),
+        expiry_date: is_lifetime === true ? null : (expiry_date || null),
+        is_lifetime: is_lifetime === true,
+        status: status || 'active',
+        notes: notes || '',
+      };
+
+      await db.collection(collections.user_subscriptions).doc(subscriptionId).set(subscriptionRecord);
+
+      // 4. Update User Profile
       const subscription = {
         tier,
         status: status || 'active',
         stripeCustomerId: 'manual',
         stripeSubscriptionId: 'manual',
         currentPeriodStart: new Date().toISOString(),
-        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year promo duration
-        promoOverride: promoOverride !== false,
+        currentPeriodEnd: is_lifetime === true ? 'lifetime' : (expiry_date || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()),
+        isLifetime: is_lifetime === true,
+        sourceType: source_type || 'admin_assignment',
+        notes: notes || '',
+        promoOverride: true,
       };
 
-      await db.collection(collections.users).doc(id).update({
+      await userRef.update({
         subscription,
         updatedAt: new Date().toISOString(),
       });
 
-      logger.info(`Admin manually assigned plan '${tier}' to user ${id}`);
-      res.status(200).json({ success: true, message: `Subscription plan '${tier}' assigned to user ${id}`, data: subscription });
+      // 5. Create Audit Log
+      const auditLogId = db.collection(collections.audit_logs).doc().id;
+      const auditLog = {
+        id: auditLogId,
+        admin_id: adminUid,
+        admin_name: adminName,
+        user_id: id,
+        user_name: userName,
+        previous_plan: previousPlan,
+        new_plan: tier,
+        timestamp: new Date().toISOString(),
+        reason: notes || 'Manual Plan Assignment',
+        source_type: source_type || 'admin_assignment',
+      };
+
+      await db.collection(collections.audit_logs).doc(auditLogId).set(auditLog);
+
+      logger.info(`Admin ${adminName} manually assigned plan '${tier}' to user ${userName} (${id}). Reason: ${notes}`);
+      res.status(200).json({
+        success: true,
+        message: `Subscription plan '${tier}' assigned to user ${userName}`,
+        data: {
+          subscription,
+          subscriptionRecord,
+          auditLog
+        }
+      });
     } catch (error) {
       logger.error(`assignUserPlan error: ${(error as Error).message}`);
       res.status(500).json({ success: false, error: 'Failed to assign plan' });

@@ -64,14 +64,41 @@ export async function subscriptionMiddleware(
     const userData = userSnap.data()!;
     
     // 2. Resolve Subscription Tier
-    const subscription = userData.subscription || {
+    let subscription = userData.subscription || {
       tier: 'free',
       status: 'active',
       promoOverride: false
     };
 
-    const tier = subscription.tier || 'free';
-    const status = subscription.status || 'active';
+    let tier = subscription.tier || 'free';
+    let status = subscription.status || 'active';
+    const isLifetime = subscription.isLifetime === true || subscription.currentPeriodEnd === 'lifetime';
+
+    // Check expiration if not free and not lifetime
+    if (tier !== 'free' && !isLifetime && subscription.currentPeriodEnd) {
+      const expiry = new Date(subscription.currentPeriodEnd);
+      if (isNaN(expiry.getTime()) || expiry < new Date()) {
+        // Expired! Downgrade user to free tier in Firestore
+        logger.info(`SaaS: User ${uid} subscription tier '${tier}' has expired on ${subscription.currentPeriodEnd}. Downgrading to free.`);
+        tier = 'free';
+        status = 'active';
+        subscription = {
+          tier: 'free',
+          status: 'active',
+          stripeCustomerId: subscription.stripeCustomerId || 'manual',
+          stripeSubscriptionId: subscription.stripeSubscriptionId || 'manual',
+          currentPeriodStart: new Date().toISOString(),
+          currentPeriodEnd: null as any,
+          isLifetime: false,
+          sourceType: 'free',
+          promoOverride: false
+        };
+        await userRef.update({
+          subscription,
+          updatedAt: new Date().toISOString()
+        });
+      }
+    }
 
     // 3. Fetch Plan details from subscription_plans
     const planSnap = await db.collection(collections.subscription_plans).doc(tier).get();
