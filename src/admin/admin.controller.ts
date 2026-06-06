@@ -358,6 +358,87 @@ export class AdminController {
     }
   };
 
+  // POST /admin/settings — General system controls
+  public updateAdminSettings = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { limitTokens, useGPT4o, useClaude, maintenanceMode, pushNotifications } = req.body;
+      const db = getFirestore();
+
+      const update: Record<string, any> = { updatedAt: new Date().toISOString() };
+      if (limitTokens !== undefined) update.limitTokens = Number(limitTokens);
+      if (useGPT4o !== undefined) update.useGPT4o = Boolean(useGPT4o);
+      if (useClaude !== undefined) update.useClaude = Boolean(useClaude);
+      if (maintenanceMode !== undefined) update.maintenanceMode = Boolean(maintenanceMode);
+      if (pushNotifications !== undefined) update.pushNotifications = Boolean(pushNotifications);
+
+      await db.collection(collections.platform_config).doc('admin_settings').set(update, { merge: true });
+      logger.info(`Admin updated general settings: ${JSON.stringify(update)}`);
+      res.status(200).json({ success: true, message: 'Admin settings updated', data: update });
+    } catch (error) {
+      logger.error(`updateAdminSettings error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to update general settings' });
+    }
+  };
+
+  // POST /admin/users/:id/override — Manual user limits/features overrides
+  public overrideUserLimits = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { limitOverrides, featuresEnabled, reason } = req.body;
+      const db = getFirestore();
+
+      const overrideDoc = {
+        limitOverrides: limitOverrides || null,
+        featuresEnabled: featuresEnabled || null,
+        reason: reason || 'Admin override',
+        updatedBy: (req as any).uid || 'admin',
+        updatedAt: new Date().toISOString(),
+      };
+
+      await db.collection(collections.user_overrides).doc(id).set(overrideDoc, { merge: true });
+      logger.info(`Admin set custom overrides for user ${id}`);
+      res.status(200).json({ success: true, message: `Overrides saved for user ${id}`, data: overrideDoc });
+    } catch (error) {
+      logger.error(`overrideUserLimits error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to save user overrides' });
+    }
+  };
+
+  // POST /admin/users/:id/assign-plan — Manual subscription administration
+  public assignUserPlan = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { tier, status, promoOverride } = req.body;
+      const db = getFirestore();
+
+      if (!tier || !['free', 'standard', 'premium', 'enterprise'].includes(tier)) {
+        res.status(400).json({ success: false, error: 'Invalid tier specified' });
+        return;
+      }
+
+      const subscription = {
+        tier,
+        status: status || 'active',
+        stripeCustomerId: 'manual',
+        stripeSubscriptionId: 'manual',
+        currentPeriodStart: new Date().toISOString(),
+        currentPeriodEnd: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(), // 1 year promo duration
+        promoOverride: promoOverride !== false,
+      };
+
+      await db.collection(collections.users).doc(id).update({
+        subscription,
+        updatedAt: new Date().toISOString(),
+      });
+
+      logger.info(`Admin manually assigned plan '${tier}' to user ${id}`);
+      res.status(200).json({ success: true, message: `Subscription plan '${tier}' assigned to user ${id}`, data: subscription });
+    } catch (error) {
+      logger.error(`assignUserPlan error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to assign plan' });
+    }
+  };
+
   // POST /admin/import-local-html — Ingest local HTML knowledge base into Firestore
   public importLocalHtml = async (req: Request, res: Response): Promise<void> => {
     try {

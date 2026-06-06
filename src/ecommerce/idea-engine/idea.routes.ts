@@ -5,6 +5,7 @@ import { IdeaGeneratorService } from './generator.service';
 import { successResponse } from '../../core/utils/responseFormatter';
 import { authMiddleware } from '../../core/middleware/auth.middleware';
 import { aiRateLimitMiddleware } from '../../core/middleware/rateLimit.middleware';
+import { subscriptionMiddleware } from '../../core/middleware/subscription.middleware';
 import { MODULES } from '../../core/constants';
 
 const router = Router();
@@ -13,7 +14,7 @@ const service = new IdeaGeneratorService();
 router.use(authMiddleware);
 
 // Generate new ideas
-router.post('/generate', aiRateLimitMiddleware, async (req: Request, res: Response) => {
+router.post('/generate', aiRateLimitMiddleware, subscriptionMiddleware, async (req: Request, res: Response) => {
   const { uid } = req as AuthenticatedRequest;
   const { prompt } = req.body as { prompt?: string };
   const ideas = await service.generateIdeas(uid, prompt);

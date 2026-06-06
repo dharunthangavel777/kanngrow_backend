@@ -23,6 +23,7 @@ import { knowledgeRoutes } from './knowledge/knowledge.routes';
 import { marketRoutes } from './market-intelligence/market.routes';
 import adminRoutes from './admin/admin.routes';
 import adminAuthRoutes from './admin/admin.auth.routes';
+import { billingRoutes } from './modules/billing/billing.routes';
 
 // ── Initialize Firebase ───────────────────────────────────
 initFirebase();
@@ -37,7 +38,14 @@ app.use(cors({
   origin: env.ALLOWED_ORIGINS.split(','),
   credentials: true,
 }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({
+  limit: '10mb',
+  verify: (req: any, res, buf) => {
+    if (req.originalUrl && req.originalUrl.includes('/billing/webhooks')) {
+      req.rawBody = buf;
+    }
+  }
+}));
 app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 app.use(rateLimitMiddleware);
@@ -68,6 +76,7 @@ app.use(`${API}/onboarding`, onboardingRoutes);
 app.use(`${API}/knowledge`, knowledgeRoutes);
 app.use(`${API}/market`, marketRoutes);
 app.use(`${API}/admin`, adminRoutes);
+app.use(`${API}/billing`, billingRoutes);
 
 // ── 404 ───────────────────────────────────────────────────
 app.use((_req, res) => {

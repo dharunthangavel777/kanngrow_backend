@@ -96,8 +96,41 @@ export class OpenAIProvider {
       feature = 'unknown',
     } = options;
 
-    // Apply platform overrides
+    // Resolve user-allowed models from subscription plan
     let model = options.model ?? openaiConfig.model;
+    
+    if (uid !== 'anonymous' && uid !== 'system') {
+      try {
+        const db = getFirestore();
+        const userSnap = await db.collection(collections.users).doc(uid).get();
+        if (userSnap.exists) {
+          const userData = userSnap.data()!;
+          const tier = userData.subscription?.tier || 'free';
+          
+          // Check for manual overrides
+          const overrideSnap = await db.collection(collections.user_overrides).doc(uid).get();
+          let allowedModels: string[] = [];
+          if (overrideSnap.exists && overrideSnap.data()?.allowedModels) {
+            allowedModels = overrideSnap.data()!.allowedModels;
+          } else {
+            const planSnap = await db.collection(collections.subscription_plans).doc(tier).get();
+            if (planSnap.exists) {
+              allowedModels = planSnap.data()!.allowedModels || [];
+            }
+          }
+
+          if (allowedModels.length > 0 && !allowedModels.includes(model)) {
+            const fallbackModel = allowedModels[0] || 'gpt-4o-mini';
+            logger.warn(`SaaS: User '${uid}' requested model '${model}' which is not allowed. Downgrading to fallback model '${fallbackModel}'.`);
+            model = fallbackModel;
+          }
+        }
+      } catch (err) {
+        logger.warn(`SaaS: Failed to verify user-allowed models: ${(err as Error).message}. Defaulting to requested model.`);
+      }
+    }
+
+    // Apply platform overrides
     if (settings.tierDownModel) model = 'gpt-4o-mini';
 
     let maxTokens = options.maxTokens ?? openaiConfig.maxTokens;

@@ -8,6 +8,7 @@ import { BusinessPlanService } from './businessPlan.service';
 import { successResponse } from '../../core/utils/responseFormatter';
 import { authMiddleware } from '../../core/middleware/auth.middleware';
 import { aiRateLimitMiddleware } from '../../core/middleware/rateLimit.middleware';
+import { subscriptionMiddleware, SubscriptionRequest } from '../../core/middleware/subscription.middleware';
 import { MODULES } from '../../core/constants';
 
 const router = Router();
@@ -18,9 +19,17 @@ const contextBuilder = new ContextBuilder();
 
 router.use(authMiddleware);
 
-router.post('/generate', aiRateLimitMiddleware, async (req: Request, res: Response) => {
+router.post('/generate', aiRateLimitMiddleware, subscriptionMiddleware, async (req: Request, res: Response) => {
   try {
-    const { uid } = req as AuthenticatedRequest;
+    const subReq = req as SubscriptionRequest;
+    if (!subReq.subscription?.features.marketingStrategy) {
+      res.status(403).json({
+        success: false,
+        error: 'Full Business Plan Generation requires the Premium plan. Please upgrade.'
+      });
+      return;
+    }
+    const { uid } = subReq;
     const [profile, facts] = await Promise.all([
       profileService.getProfile(uid),
       memory.getMemoryFacts(uid),
@@ -35,9 +44,17 @@ router.post('/generate', aiRateLimitMiddleware, async (req: Request, res: Respon
   }
 });
 
-router.post('/roadmap', aiRateLimitMiddleware, async (req: Request, res: Response) => {
+router.post('/roadmap', aiRateLimitMiddleware, subscriptionMiddleware, async (req: Request, res: Response) => {
   try {
-    const { uid } = req as AuthenticatedRequest;
+    const subReq = req as SubscriptionRequest;
+    if (!subReq.subscription?.features.competitorResearch) {
+      res.status(403).json({
+        success: false,
+        error: 'E-commerce roadmaps require the Standard plan or higher. Please upgrade.'
+      });
+      return;
+    }
+    const { uid } = subReq;
     const [profile, facts] = await Promise.all([
       profileService.getProfile(uid),
       memory.getMemoryFacts(uid),

@@ -64,6 +64,10 @@ export const collections = {
   // ── Token Usage Tracking ───────────────────────────────
   openai_usage_logs: 'openai_usage_logs',
   platform_config: 'platform_config',
+  // ── SaaS Subscriptions & Organizations ──────────────────
+  subscription_plans: 'subscription_plans',
+  user_overrides: 'user_overrides',
+  organizations: 'organizations',
 } as const;
 
 export type CollectionName = keyof typeof collections;

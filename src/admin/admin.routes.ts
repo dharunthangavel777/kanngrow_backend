@@ -21,6 +21,11 @@ router.delete('/users/:id', adminController.deleteUser);
 
 // Platform settings / broadcasts
 router.post('/broadcast', adminController.sendBroadcast);
+router.post('/settings', adminController.updateAdminSettings);
+
+// ── User Specific SaaS Overrides ──────────────────────────
+router.post('/users/:id/override', adminController.overrideUserLimits);
+router.post('/users/:id/assign-plan', adminController.assignUserPlan);
 
 // ── AI Usage Tracking & Cost Controls ─────────────────────
 router.get('/ai-usage', adminController.getAIUsageStats);
