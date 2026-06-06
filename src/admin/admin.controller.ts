@@ -543,6 +543,54 @@ export class AdminController {
     }
   };
 
+  // GET /admin/audit-logs — Retrieve chronological audit logs
+  public getAuditLogs = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const db = getFirestore();
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const startAfter = req.query.startAfter as string | undefined;
+
+      let query = db
+        .collection(collections.audit_logs)
+        .orderBy('timestamp', 'desc')
+        .limit(limit);
+
+      if (startAfter) {
+        const cursorDoc = await db.collection(collections.audit_logs).doc(startAfter).get();
+        if (cursorDoc.exists) {
+          query = query.startAfter(cursorDoc);
+        }
+      }
+
+      const snapshot = await query.get();
+      const logs = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          adminId: data.admin_id,
+          adminName: data.admin_name || 'Admin',
+          userId: data.user_id,
+          userName: data.user_name || 'User',
+          previousPlan: data.previous_plan || 'free',
+          newPlan: data.new_plan || 'free',
+          timestamp: data.timestamp || '',
+          reason: data.reason || '',
+          sourceType: data.source_type || 'admin_assignment',
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        data: logs,
+        count: logs.length,
+        hasMore: logs.length === limit,
+      });
+    } catch (error) {
+      logger.error(`getAuditLogs error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch audit logs' });
+    }
+  };
+
   // POST /admin/import-local-html — Ingest local HTML knowledge base into Firestore
   public importLocalHtml = async (req: Request, res: Response): Promise<void> => {
     try {

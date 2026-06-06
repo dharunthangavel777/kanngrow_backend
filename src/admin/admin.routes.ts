@@ -26,6 +26,7 @@ router.post('/settings', adminController.updateAdminSettings);
 // ── User Specific SaaS Overrides ──────────────────────────
 router.post('/users/:id/override', adminController.overrideUserLimits);
 router.post('/users/:id/assign-plan', adminController.assignUserPlan);
+router.get('/audit-logs', adminController.getAuditLogs);
 
 // ── AI Usage Tracking & Cost Controls ─────────────────────
 router.get('/ai-usage', adminController.getAIUsageStats);
