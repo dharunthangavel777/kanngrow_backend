@@ -38,10 +38,10 @@ export class ChatController {
   async sendMessage(req: Request, res: Response): Promise<void> {
     const { uid } = req as AuthenticatedRequest;
     const { sessionId } = req.params;
-    const { message } = req.body as { message: string };
+    const { message, model } = req.body as { message: string; model?: string };
     if (!message?.trim()) throw new AppError('Message cannot be empty', 400);
 
-    const result = await chatService.sendMessage(uid, sessionId, message);
+    const result = await chatService.sendMessage(uid, sessionId, message, model);
     res.json(successResponse(result, result.usedModules));
   }
 }

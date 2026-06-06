@@ -97,20 +97,23 @@ export class ChatService {
     uid: string,
     sessionId: string,
     userMessage: string,
+    preferredModel?: string,
   ): Promise<{ message: MessageDoc; usedModules: string[] }> {
     // 1. Detect intent
     const { intent, usedModules } = await this.router.detectIntent(userMessage, uid);
     logger.debug(`Chat intent: ${intent}, modules: ${usedModules.join(', ')}`);
 
-    // 2. Build context from profile + memory + knowledge base (RAG)
-    const [profile, facts, platformSettings] = await Promise.all([
+    // 2. Build context from user + profile + memory + knowledge base (RAG)
+    const [userSnap, profile, facts, platformSettings] = await Promise.all([
+      this.db.collection(collections.users).doc(uid).get(),
       this.profileService.getProfile(uid),
       this.memory.getMemoryFacts(uid),
       getPlatformSettings(),
     ]);
+    const user = userSnap.exists ? userSnap.data() : null;
     const knowledgeResult = await this.knowledgeSearch.search(userMessage, profile);
     const knowledgeContext = this.knowledgeSearch.formatAsContext(knowledgeResult);
-    const { systemPrompt, profileSummary, knowledgeInjected } = this.contextBuilder.build(profile, facts, knowledgeContext);
+    const { systemPrompt, profileSummary, knowledgeInjected } = this.contextBuilder.build(profile, facts, knowledgeContext, user);
 
     // 3. Load recent history — limit from platform config (default 6)
     const maxHistory = platformSettings.maxHistoryLimit ?? 6;
@@ -119,6 +122,16 @@ export class ChatService {
       role: m.role,
       content: m.content,
     }));
+
+    // Map client model selection to OpenAI model IDs
+    let modelId: string | undefined;
+    if (preferredModel === 'GPT-4') {
+      modelId = 'gpt-4o';
+    } else if (preferredModel === 'GPT-3.5') {
+      modelId = 'gpt-3.5-turbo';
+    } else if (preferredModel === 'Claude') {
+      modelId = 'gpt-4o'; // fallback
+    }
 
     // 4. Call OpenAI — pass uid + feature for cost tracking
     const aiContent = await this.ai.complete({
@@ -129,6 +142,7 @@ export class ChatService {
       ],
       uid,
       feature: 'chat',
+      model: modelId,
     });
 
     // 5. Save user message
