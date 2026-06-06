@@ -113,7 +113,7 @@ export class ChatService {
     const user = userSnap.exists ? userSnap.data() : null;
     const knowledgeResult = await this.knowledgeSearch.search(userMessage, profile);
     const knowledgeContext = this.knowledgeSearch.formatAsContext(knowledgeResult);
-    const { systemPrompt, profileSummary, knowledgeInjected } = this.contextBuilder.build(profile, facts, knowledgeContext, user);
+    const { systemPrompt, profileSummary, knowledgeInjected } = this.contextBuilder.build(profile, facts, knowledgeContext, user, intent);
 
     // 3. Load recent history — limit from platform config (default 6)
     const maxHistory = platformSettings.maxHistoryLimit ?? 6;
