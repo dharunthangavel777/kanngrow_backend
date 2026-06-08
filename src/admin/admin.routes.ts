@@ -32,7 +32,7 @@ router.get('/audit-logs', adminController.getAuditLogs);
 router.get('/ai-usage', adminController.getAIUsageStats);
 router.post('/ai-settings', adminController.updateOpenAISettings);
 
-// ── Local Ingestion ───────────────────────────────────────
-router.post('/import-local-html', adminController.importLocalHtml);
+// ── Platform Context (V2 Pins) ─────────────────────────────
+router.post('/platform-context', adminController.managePlatformContext);
 
 export default router;

@@ -1,196 +1,115 @@
-import { BusinessProfile } from '../../modules/profile/profile.service';
-import { MemoryFact } from '../memory/memory.service';
-import { KnowledgeSearchResult } from '../../knowledge/knowledge.types';
+import { UserDNA } from '../dna/dna.types';
+import { MemoryTiers, MemoryService } from '../memory/memory.service';
+import { LanguageProfile } from '../language/language.engine';
+import { BusinessIntent, getBusinessIntelligence, getPlatformPins } from '../intelligence/business.context';
+import { DecisionMemory } from '../decision/decision.memory';
 
-export interface AIContext {
-  systemPrompt: string;
-  profileSummary: string;
-  knowledgeInjected: boolean;
-}
+// ── Context Builder V2 ────────────────────────────────────────────────────────
+// Builds one perfect, adaptive, conversational system prompt.
+// NO templates. NO mandatory sections. NO scripted formats.
+// The AI talks like a smart friend who deeply knows this user.
 
 export class ContextBuilder {
-  /**
-   * Builds the full system prompt from:
-   * 1. User's business profile
-   * 2. Memory facts from past conversations
-   * 3. Kangrow Knowledge Base results (RAG — Stage 2)
-   * 4. AI Intent (V3 Multi-Agent Routing)
-   */
-  build(
-    profile: BusinessProfile | null,
-    facts: MemoryFact[],
-    knowledgeContext?: string,
-    user?: any,
-    intent: string = 'general_chat',
-  ): AIContext {
-    const profileSummary = this.buildProfileSummary(profile);
-    const memorySummary = this.buildMemorySummary(facts);
-    const knowledgeInjected = !!(knowledgeContext && knowledgeContext.trim().length > 0);
+  private decisionMemory = new DecisionMemory();
+  private memoryService = new MemoryService();
 
-    const name = user?.name || 'Founder';
-    const plan = user?.subscription?.tier || 'free';
+  async build(
+    dna: UserDNA | null,
+    memory: MemoryTiers,
+    language: LanguageProfile,
+    intent: BusinessIntent,
+    uid: string,
+  ): Promise<string> {
+    const memoryText = this.memoryService.formatForPrompt(memory);
 
-    // Get intent-specific guidelines
-    const agentPrompt = this.getAgentPrompt(intent);
+    const decisions = await this.decisionMemory.getDecisions(uid, 10);
+    const decisionText = this.decisionMemory.formatForPrompt(decisions);
 
-    const systemPrompt = `You are Kangrow AI — the ultimate AI Ecommerce Growth Consultant built specifically for Indian entrepreneurs. You are NOT an AI chatbot. You are the user's strategic co-founder and business advisor.
+    const businessContext = getBusinessIntelligence(intent);
+    const pins = await getPlatformPins();
 
-Greeting & Tone:
-- Always greet the user by name: "${name}".
-- Act like an experienced, highly successful ecommerce growth consultant. Be direct, punchy, business-smart, and strategic. Do not write generic introductory fillers.
-
-User Context:
-- Current Plan: ${plan.toUpperCase()}
-- Business Profile:
-${profileSummary}
-${memorySummary}
-${knowledgeContext || ''}
-
-Reasoning Directive (CRITICAL):
-- You MUST start your response with a <reasoning> block containing your step-by-step thinking.
-- Inside the <reasoning> block, you must explicitly:
-  1. Analyze the user's specific constraints (profile name, location/state, budget, stage, and goals).
-  2. Identify the core intent of the user's question.
-  3. Brainstorm and evaluate at least 3-4 options/approaches, listing their pros, cons, and starter costs.
-  4. Select the best recommendation and justify why it fits this user's budget and location better than the others.
-- Format:
-  <reasoning>
-  [Your step-by-step thinking here]
-  </reasoning>
-- Never skip the <reasoning> block. The client app strips and renders it separately in a premium collapsible panel.
-
-SaaS Cost Control & Integrity rules:
-- Banned Behavior: NEVER make up fake/hallucinated percentages (e.g. "20-35% conversion increase").
-- Instead, use evidence-based reasoning, qualitative analysis, or reference realistic ranges if supported (e.g. "Typical industry conversion rates for tech accessories are between 1.5% and 3.0%").
-
-Visual Elements:
-- Use inline visual signals for faster scanning where appropriate:
-  📈 (Growing)
-  📉 (Declining)
-  🔥 (Trending)
-  ⚠ (Risk)
-  💰 (Revenue)
-  🎯 (Opportunity)
-  🚀 (Growth)
-- Use Callout Blocks (AI Blocks) for important highlights by starting a paragraph with:
-  💡 Opportunity: [Insight text...]
-  📊 Market Signal: [Insight text...]
-  ⚠ Risk: [Insight text...]
-  🚀 Action Plan: [Insight text...]
-
-Smart Expandable Sections:
-- For detailed technical breakdowns (e.g. competitor list, SEO keyword list, detailed financial spreadsheets), format them inside custom expandable markers:
-  +++ Show [Section Title]
-  [Detailed content, tables, or lists here]
-  +++
-  This hides secondary information by default to prevent cognitive overload.
-
-Quick Action Chips:
-- At the very end of your response, always suggest 3-4 interactive follow-up choices (next action chips).
-- Format them as single lines exactly like this:
-  [Action: Generate SEO content]
-  [Action: Analyze competitors]
-  [Action: Create ad creatives]
-  [Action: Build pricing strategy]
-- Ensure these action chips are at the absolute bottom of your response and start on a new line.
-
---------------------------------------------------
-AGENT-SPECIFIC PROTOCOL (Intent: ${intent.toUpperCase()}):
-${agentPrompt}`;
-
-    return { systemPrompt, profileSummary, knowledgeInjected };
+    return this.assemble(dna, memoryText, decisionText, businessContext, pins, language);
   }
 
-  private getAgentPrompt(intent: string): string {
-    switch (intent) {
-      case 'product_discovery':
-        return `Role: E-commerce Sourcing & Business Idea Consultant.
-Dynamic Response Structure:
-You must organize your answer using the following structure:
-1. **SITUATION**: Re-state what you understood about the user's technology/interest focus, budget, and location (e.g. state) as constraints.
-2. **OPTIONS EVALUATED**: Briefly list the alternative tech options you brainstormed in reasoning and their startup costs.
-3. **RECOMMENDATION**: Detail the chosen business idea.
-4. **OPPORTUNITY SCORING**: Show ratings (1-10) for:
-   - Demand: [High/Medium/Low] (Score: X/10)
-   - Competition: [High/Medium/Low] (Score: X/10)
-   - Startup Cost: [Low/Medium/High] (Score: X/10, with estimate e.g. ₹30k - ₹50k)
-   - Technical Complexity: [Low/Medium/High] (Score: X/10)
-   - Scalability: [High/Medium/Low] (Score: X/10)
-   - Overall Score: [X.Y/10]
-5. **RISKS & MITIGATION**: Critical issues and solutions.
-6. **IMMEDIATE NEXT STEPS**: Give 3 concrete action items.`;
+  private assemble(
+    dna: UserDNA | null,
+    memoryText: string,
+    decisionText: string,
+    businessContext: string,
+    pins: string,
+    language: LanguageProfile,
+  ): string {
+    const name = dna?.name || '';
+    const greeting = name ? `(You know this user as ${name}.)` : '(First interaction — if they share their name, remember it.)';
+    const stateCtx = dna?.state ? `from ${dna.state}` : 'in India';
+    const budgetCtx = dna?.budgetLabel ? `Budget: ${dna.budgetLabel}` : '';
+    const stageCtx = this.stageLabel(dna?.businessStage);
+    const riskCtx = dna?.riskTolerance ? `Prefers ${dna.riskTolerance}-risk approaches.` : '';
+    const nicheCtx = dna?.niche ? `Current focus: ${dna.niche}.` : '';
 
-      case 'product_validation':
-        return `Role: E-commerce Validation Specialist.
-Dynamic Response Structure:
-Organize your response using:
-1. **PRODUCT EVALUATION**: Critical assessment of the product viability.
-2. **VALIDATION SCORE CARD**: Rate Market Fit, Demand, Competition, and Cost out of 10.
-3. **VALIDATION CHECKLIST**: Step-by-step tasks to validate without spending.
-4. **RISKS**: Points of failure and how to avoid them.`;
+    return `You are Kangrow AI — a personal ecommerce co-founder built for Indian entrepreneurs. ${greeting}
 
-      case 'competitor_analysis':
-        return `Role: Competitive Intelligence Officer.
-Dynamic Response Structure:
-Organize your response using:
-1. **LANDSCAPE OVERVIEW**: Key competitors in India.
-2. **COMPETITIVE MATRIX**: Direct comparison of strengths/weaknesses (use markdown tables).
-3. **WHERE TO WIN**: Strategic gaps you can leverage.`;
+USER PROFILE:
+${name ? `Name: ${name}` : 'Name: Not yet known'}
+Location: ${stateCtx}
+${budgetCtx}
+Stage: ${stageCtx}
+${nicheCtx}
+${riskCtx}
+${decisionText ? `\n${decisionText}` : ''}
 
-      case 'market_analysis':
-        return `Role: E-commerce Market Researcher.
-Dynamic Response Structure:
-Organize your response using:
-1. **MARKET SIZE & TRENDS**: Current demand dynamics and realistic growth signals.
-2. **TARGET SEGMENT INSIGHTS**: Customer demographics and buying motives.
-3. **MARKET RISKS**: Saturation points or seasonal issues.`;
+${memoryText ? `WHAT YOU ALREADY KNOW ABOUT THIS USER:\n${memoryText}\n` : ''}
+${pins ? `CURRENT PLATFORM CONTEXT:\n${pins}\n` : ''}
 
-      case 'business_planning':
-        return `Role: Business Planner and Financial Strategist.
-Dynamic Response Structure:
-Organize your response using:
-1. **BUSINESS MODEL**: Sourcing/monetization streams.
-2. **FINANCIAL FORECAST**: Revenue streams and milestones.
-3. **ROADMAP STEPS**: Timeline of tasks.`;
+YOUR ECOMMERCE EXPERTISE:
+${businessContext}
 
-      case 'growth_coaching':
-        return `Role: E-commerce Growth & Marketing Coach.
-Dynamic Response Structure:
-Organize your response using:
-1. **ACQUISITION CHANNELS**: Digital channels (organic/paid).
-2. **CAC REDUCTION STRATEGY**: Keeping customer acquisition cost low.
-3. **RETENTION INSIGHTS**: Recurring growth tips.`;
+${language.instruction}
 
-      case 'general_chat':
-      default:
-        return `Role: E-commerce Co-founder.
-Dynamic Response Structure:
-Provide natural, conversational advice focused on e-commerce, offering actionable bullet points.`;
-    }
+HOW TO RESPOND:
+${this.styleGuide(dna?.preferredResponseStyle, dna?.emotionalState)}
+- Talk like a smart, direct friend who happens to be an ecommerce expert. Not a consultant.
+- Give ONE clear recommendation, not a menu of options.
+- Use real numbers: "₹35K startup cost", "40% margin", "Meesho takes 18%" — not vague claims.
+- Never make up statistics. If uncertain, say "industry data suggests" or "typically around".
+- No section headers like "SITUATION:", "RECOMMENDATION:", "OPPORTUNITY SCORING:". Never.
+- No forced structure, no mandatory format — just a natural, flowing response.
+- End with 2–3 short follow-up suggestions the user might want to ask, each on its own line starting with "→ "
+  Example: → Want me to find suppliers for this? → Should I help you estimate the profit margin?
+
+${this.emotionGuide(dna?.emotionalState)}`;
   }
 
-  private buildProfileSummary(profile: BusinessProfile | null): string {
-    if (!profile) return 'User Profile: Not yet set up.';
-
-    const lines = [
-      `Store: ${profile.storeName || 'Not named'}`,
-      `Industry: ${profile.industry || 'Not set'}`,
-      `Audience: ${profile.targetAudience || 'Not set'}`,
-      `Budget: ${profile.budget || 'Not set'}`,
-      `Business Model: ${profile.businessModel || 'Not set'}`,
-      `Stage: ${profile.stage || 'Idea stage'}`,
-      `Goal: ${profile.goal || 'Not set'}`,
-      `Experience: ${profile.experienceLevel || 'Not set'}`,
-      `Location State: ${profile.state || 'Not set'}`,
-    ];
-
-    return `User Business Profile:\n${lines.map((l) => `- ${l}`).join('\n')}`;
+  private stageLabel(stage?: string): string {
+    return ({
+      idea: 'Just exploring — no product chosen yet',
+      validating: 'Has an idea, checking if it\'s viable',
+      starting: 'Ready to start, needs execution guidance',
+      growing: 'Already selling, wants to grow faster',
+      scaling: 'Established, wants to scale',
+    } as Record<string, string>)[stage ?? 'idea'] ?? 'Exploring';
   }
 
-  private buildMemorySummary(facts: MemoryFact[]): string {
-    if (!facts.length) return '';
+  private styleGuide(style?: string, emotion?: string): string {
+    if (emotion === 'overwhelmed') return '- User is OVERWHELMED. Be very simple. One thing at a time. Short sentences. Skip all jargon.';
+    if (emotion === 'confused') return '- User is CONFUSED. First clarify what they actually need. Ask one focused question if the intent is unclear.';
+    if (emotion === 'excited') return '- User is EXCITED and ready. Match their energy. Lead with action. Skip caveats.';
+    if (emotion === 'discouraged') return '- User is DISCOURAGED. Lead with a brief human acknowledgment, then immediately give 1–2 easy concrete next steps.';
+    return ({
+      casual: '- Keep it short and conversational. Friendly tone.',
+      detailed: '- Be thorough. User likes depth and specifics.',
+      story: '- Use real examples and analogies. Make it relatable.',
+      analytical: '- Be data-driven. Frameworks + specific numbers.',
+    } as Record<string, string>)[style ?? 'casual'] ?? '- Keep it conversational and friendly.';
+  }
 
-    const topFacts = facts.slice(0, 10).map((f) => `- ${f.fact}`).join('\n');
-    return `\nBusiness Memory (from past conversations):\n${topFacts}`;
+  private emotionGuide(emotion?: string): string {
+    const map: Record<string, string> = {
+      confused: 'IMPORTANT: User is confused. Start by identifying what they\'re unclear about. Ask one specific clarifying question, then answer it clearly.',
+      overwhelmed: 'IMPORTANT: User is overwhelmed. Say "Let\'s focus on just one thing." Give only one next step. No lists longer than 3 items.',
+      ready: 'IMPORTANT: User is ready to act. Skip background. Give immediate, specific action steps.',
+      discouraged: 'IMPORTANT: User is discouraged. One sentence of empathy, then immediately pivot to 1–2 things they can do TODAY.',
+    };
+    return map[emotion ?? ''] ? `${map[emotion!]}` : '';
   }
 }

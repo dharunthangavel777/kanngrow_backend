@@ -19,7 +19,8 @@ import { ideaRoutes } from './ecommerce/idea-engine/idea.routes';
 import { validationRoutes } from './ecommerce/validation-engine/validation.routes';
 import { businessPlanRoutes } from './ecommerce/business-planner/businessPlan.routes';
 import { onboardingRoutes } from './ai/onboarding-engine/onboarding.routes';
-import { knowledgeRoutes } from './knowledge/knowledge.routes';
+// V2: Knowledge base removed — replaced by Business Intelligence Layer in contextBuilder
+// import { knowledgeRoutes } from './knowledge/knowledge.routes';
 import { marketRoutes } from './market-intelligence/market.routes';
 import adminRoutes from './admin/admin.routes';
 import adminAuthRoutes from './admin/admin.auth.routes';
@@ -72,7 +73,8 @@ app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
     service: 'kangrow-ai-backend',
-    version: '1.0.0',
+    version: '2.0.0',
+    architecture: 'V2 — User DNA + Memory + Language + Single-Call Pipeline',
     timestamp: new Date().toISOString(),
   });
 });
@@ -90,7 +92,8 @@ app.use(`${API}/ecommerce/ideas`, ideaRoutes);
 app.use(`${API}/ecommerce/validate`, validationRoutes);
 app.use(`${API}/ecommerce/business-plan`, businessPlanRoutes);
 app.use(`${API}/onboarding`, onboardingRoutes);
-app.use(`${API}/knowledge`, knowledgeRoutes);
+// V2: Knowledge base route removed — see src/ai/intelligence/business.context.ts
+// app.use(`${API}/knowledge`, knowledgeRoutes);
 app.use(`${API}/market`, marketRoutes);
 app.use(`${API}/admin`, adminRoutes);
 app.use(`${API}/billing`, billingRoutes);

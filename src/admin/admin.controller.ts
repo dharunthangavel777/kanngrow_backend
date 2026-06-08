@@ -1,10 +1,8 @@
 import { Request, Response } from 'express';
 import { getFirestore, collections } from '../core/config/firebase.config';
-import { KnowledgeService } from '../knowledge/knowledge.service';
 import { logger } from '../core/config/logger.config';
 import { FcmService } from '../core/services/fcm.service';
 
-const knowledgeService = new KnowledgeService();
 const fcmService = new FcmService();
 
 export class AdminController {
@@ -16,7 +14,6 @@ export class AdminController {
 
       const [
         usersSnap,
-        knowledgeStats,
         standardSnap,
         premiumSnap,
         enterpriseSnap,
@@ -26,7 +23,6 @@ export class AdminController {
         lifetimeSnap,
       ] = await Promise.all([
         db.collection(collections.users).count().get(),
-        knowledgeService.getStats(),
         db.collection(collections.users).where('subscription.tier', '==', 'standard').count().get(),
         db.collection(collections.users).where('subscription.tier', '==', 'premium').count().get(),
         db.collection(collections.users).where('subscription.tier', '==', 'enterprise').count().get(),
@@ -35,6 +31,7 @@ export class AdminController {
         db.collection(collections.users).where('subscription.sourceType', '==', 'trial').count().get(),
         db.collection(collections.users).where('subscription.isLifetime', '==', true).count().get(),
       ]);
+
 
       const totalUsers = usersSnap.data().count;
       const standardUsers = standardSnap.data().count;
@@ -62,7 +59,7 @@ export class AdminController {
         data: {
           totalUsers,
           totalChats,
-          knowledgeBase: knowledgeStats,
+          knowledgeBase: { totalIdeas: 0, totalVendors: 0, totalSchemes: 0, totalReports: 0, totalArticles: 0 },
           freeUsers,
           standardUsers,
           premiumUsers,
@@ -677,225 +674,58 @@ export class AdminController {
     }
   };
 
-  // POST /admin/import-local-html — Ingest local HTML knowledge base into Firestore
-  public importLocalHtml = async (req: Request, res: Response): Promise<void> => {
+  // POST /admin/platform-context — Add/update admin-pinnable context pins (V2)
+  // These replace the old knowledge base. Admins pin short factual context (e.g. budget updates,
+  // new govt schemes, platform policy changes) that gets injected into all AI conversations.
+  public managePlatformContext = async (req: Request, res: Response): Promise<void> => {
     try {
-      const fs = require('fs');
-      const path = require('path');
+      const { action, id, text, isActive } = req.body;
       const db = getFirestore();
-      
-      const adminUid = (req as any).uid || 'system';
-      const filePath = path.join(__dirname, '..', '..', '..', 'kanngrow knowledge base', 'kangrow_india_knowledge_base.html');
-      
-      if (!fs.existsSync(filePath)) {
-        res.status(400).json({ success: false, error: `Local HTML knowledge base file not found at path: ${filePath}` });
-        return;
-      }
-      
-      const htmlContent = fs.readFileSync(filePath, 'utf8');
-      const startMatch = htmlContent.indexOf('const ideas = [');
-      if (startMatch === -1) {
-        res.status(400).json({ success: false, error: 'Could not find ideas array inside the HTML file' });
-        return;
-      }
-      const endMatch = htmlContent.indexOf('];', startMatch);
-      if (endMatch === -1) {
-        res.status(400).json({ success: false, error: 'Malformed JavaScript array inside the HTML file' });
-        return;
-      }
-      
-      const arrayContent = htmlContent.substring(startMatch + 'const ideas = ['.length - 1, endMatch + 1);
-      
-      // Evaluate the javascript array string safely
-      const ideasArray = new Function(`return ${arrayContent}`)();
-      if (!Array.isArray(ideasArray)) {
-        res.status(400).json({ success: false, error: 'Parsed content is not a valid array' });
-        return;
-      }
 
-      logger.info(`Starting local HTML migration. Found ${ideasArray.length} ideas.`);
-      
-      let ideasImported = 0;
-      let vendorsImported = 0;
-      let schemesImported = 0;
-      let reportsImported = 0;
-
-      const slugify = (text: string): string => {
-        return text
-          .toString()
-          .toLowerCase()
-          .replace(/\s+/g, '-')
-          .replace(/[^\w\-]+/g, '')
-          .replace(/\-\-+/g, '-')
-          .replace(/^-+/, '')
-          .replace(/-+$/, '');
-      };
-
-      const parseInvestment = (investStr: string): { min: number; max: number } => {
-        const clean = investStr.replace(/₹/g, '').trim();
-        const parts = clean.split(/[–-]/);
-        const parsePart = (p: string) => {
-          p = p.trim().toUpperCase();
-          let multiplier = 1;
-          if (p.endsWith('K')) {
-            multiplier = 1000;
-            p = p.slice(0, -1);
-          } else if (p.endsWith('L')) {
-            multiplier = 100000;
-            p = p.slice(0, -1);
-          } else if (p.endsWith('CR')) {
-            multiplier = 10000000;
-            p = p.slice(0, -2);
-          }
-          const val = parseFloat(p);
-          return isNaN(val) ? 0 : Math.round(val * multiplier);
-        };
-        const min = parsePart(parts[0] || '0');
-        const max = parts[1] ? parsePart(parts[1]) : min * 3;
-        return { min: min || 20000, max: max || 100000 };
-      };
-
-      const toTimestamp = () => new Date().toISOString();
-
-      // We can use a batched write for Firestore for efficiency
-      const batch = db.batch();
-
-      for (const item of ideasArray) {
-        const ideaId = `idea-${slugify(item.title)}`;
-        const { min: invMin, max: invMax } = parseInvestment(item.invest || '');
-        
-        // 1. Business Idea
-        const ideaDocRef = db.collection(collections.knowledge_ideas).doc(ideaId);
-        const businessIdea = {
-          id: ideaId,
-          name: item.title,
-          category: item.cat || 'general',
-          description: item.desc || '',
-          investmentMin: invMin,
-          investmentMax: invMax,
-          profitMarginMin: (item.scores?.margin || 6) * 5,
-          profitMarginMax: ((item.scores?.margin || 6) * 5) + 15,
-          marketSize: item.marketcap || 'Large',
-          demandLevel: (item.scores?.demand || 6) > 8 ? 'Very High' : ((item.scores?.demand || 6) > 6 ? 'High' : 'Medium'),
-          competitionLevel: (item.scores?.risk || 5) > 7 ? 'High' : ((item.scores?.risk || 5) > 4 ? 'Medium' : 'Low'),
-          riskLevel: (item.scores?.risk || 5) > 7 ? 'High' : ((item.scores?.risk || 5) > 4 ? 'Medium' : 'Low'),
-          targetStates: [item.state],
-          targetAudience: item.docs?.customers?.map((c: any) => `${c.k}: ${c.v}`).join(', ') || 'General Consumers',
-          sourcingOptions: item.docs?.vendors?.map((v: any) => v.name) || [],
-          requiredDocuments: item.docs?.documentation?.map((d: any) => d.k) || [],
-          keySuccessFactors: item.docs?.innovation?.map((i: any) => `${i.k}: ${i.v}`) || [],
-          challenges: item.docs?.competitors?.map((c: any) => `${c.k}: ${c.v}`) || [],
-          growthPotential: item.dataSection?.content || '',
-          kangrowScore: (item.scores?.opportunity || 8) * 10,
-          tags: [item.cat || 'general', slugify(item.state)],
+      if (action === 'add') {
+        if (!text || text.trim().length < 5) {
+          res.status(400).json({ success: false, error: 'text is required (min 5 chars)' });
+          return;
+        }
+        const docId = `pin_${Date.now()}`;
+        await db.collection(collections.platform_context).doc(docId).set({
+          id: docId,
+          text: text.trim(),
           isActive: true,
-          createdAt: toTimestamp(),
-          updatedAt: toTimestamp(),
-          createdBy: adminUid
-        };
-        batch.set(ideaDocRef, businessIdea);
-        ideasImported++;
-
-        // 2. Vendors
-        if (item.docs?.vendors && Array.isArray(item.docs.vendors)) {
-          for (const v of item.docs.vendors) {
-            const vendorId = `vendor-${slugify(v.name)}`;
-            const vendorDocRef = db.collection(collections.knowledge_vendors).doc(vendorId);
-            const vendor = {
-              id: vendorId,
-              name: v.name,
-              category: item.cat || 'general',
-              type: 'Both',
-              description: v.type || '',
-              location: v.address || 'Pan India',
-              website: v.email ? `mailto:${v.email}` : '',
-              minOrderValue: 0,
-              deliveryDays: '3–7 days',
-              paymentTerms: 'Cash / Bank Transfer',
-              specialties: [v.type || 'General Supplier'],
-              rating: 4.5,
-              verifiedByKangrow: true,
-              tags: [item.cat || 'general'],
-              isActive: true,
-              createdAt: toTimestamp(),
-              updatedAt: toTimestamp()
-            };
-            batch.set(vendorDocRef, vendor);
-            vendorsImported++;
-          }
-        }
-
-        // 3. Government Schemes
-        if (item.docs?.govtbenefits && Array.isArray(item.docs.govtbenefits)) {
-          for (const g of item.docs.govtbenefits) {
-            const schemeId = `scheme-${slugify(g.k)}`;
-            const schemeDocRef = db.collection(collections.knowledge_govt_schemes).doc(schemeId);
-            const scheme = {
-              id: schemeId,
-              name: g.k,
-              fullName: g.k,
-              department: 'Government of India / State Government',
-              description: g.v || '',
-              eligibility: [`Targeted at ${item.cat || 'general'} sector`, 'Registered MSME / Startup'],
-              benefits: [g.v || ''],
-              maxBenefitAmount: 0,
-              applicationProcess: 'Apply online via central/state MSME portal',
-              applicationUrl: item.udyamLink || 'https://udyamregistration.gov.in/',
-              targetCategories: [item.cat || 'general'],
-              targetStates: [item.state],
-              documentRequired: [],
-              isActive: true,
-              createdAt: toTimestamp(),
-              updatedAt: toTimestamp()
-            };
-            batch.set(schemeDocRef, scheme);
-            schemesImported++;
-          }
-        }
-
-        // 4. Market Reports
-        if (item.dataSection) {
-          const reportId = `report-${slugify(item.dataSection.title)}`;
-          const reportDocRef = db.collection(collections.knowledge_market_reports).doc(reportId);
-          const report = {
-            id: reportId,
-            title: item.dataSection.title,
-            category: item.cat || 'general',
-            type: 'Trending',
-            summary: item.dataSection.content || '',
-            insights: [item.dataSection.content || ''],
-            opportunityScore: (item.scores?.opportunity || 8) * 10,
-            relevantStates: [item.state],
-            targetAudience: item.docs?.customers?.map((c: any) => c.v) || ['General Shoppers'],
-            investmentRange: item.invest || 'N/A',
-            source: item.sourceLinks?.[0]?.title || 'Industry Reports',
-            validFrom: new Date().toISOString().slice(0, 10),
-            isActive: true,
-            createdAt: toTimestamp(),
-            updatedAt: toTimestamp()
-          };
-          batch.set(reportDocRef, report);
-          reportsImported++;
-        }
+          createdBy: (req as any).uid || 'admin',
+          createdAt: new Date().toISOString(),
+        });
+        logger.info(`Admin added platform context pin: "${text}"`);
+        res.status(201).json({ success: true, message: 'Platform context pin added', data: { id: docId, text } });
+        return;
       }
 
-      await batch.commit();
-      logger.info(`Local HTML Ingestion complete: ${ideasImported} ideas, ${vendorsImported} vendors, ${schemesImported} schemes, ${reportsImported} reports written.`);
-      
-      res.status(200).json({
-        success: true,
-        message: 'Knowledge base migrated from local HTML file successfully!',
-        data: {
-          ideasCount: ideasImported,
-          vendorsCount: vendorsImported,
-          schemesCount: schemesImported,
-          reportsCount: reportsImported
-        }
-      });
+      if (action === 'toggle' && id) {
+        await db.collection(collections.platform_context).doc(id).update({ isActive: Boolean(isActive) });
+        res.status(200).json({ success: true, message: `Pin ${isActive ? 'activated' : 'deactivated'}` });
+        return;
+      }
+
+      if (action === 'delete' && id) {
+        await db.collection(collections.platform_context).doc(id).delete();
+        res.status(200).json({ success: true, message: 'Pin deleted' });
+        return;
+      }
+
+      if (action === 'list' || !action) {
+        const snap = await db.collection(collections.platform_context)
+          .orderBy('createdAt', 'desc').limit(20).get();
+        const pins = snap.docs.map(d => d.data());
+        res.status(200).json({ success: true, data: pins, count: pins.length });
+        return;
+      }
+
+      res.status(400).json({ success: false, error: 'Invalid action. Use: add | toggle | delete | list' });
     } catch (error) {
-      logger.error(`importLocalHtml error: ${(error as Error).message}`);
-      res.status(500).json({ success: false, error: `Failed to migrate HTML data: ${(error as Error).message}` });
+      logger.error(`managePlatformContext error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to manage platform context' });
     }
   };
 }
+
 

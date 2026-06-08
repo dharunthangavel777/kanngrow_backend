@@ -11,9 +11,11 @@ router.use(authMiddleware);
 
 router.get('/sessions', (req, res) => controller.getSessions(req, res));
 router.post('/sessions', (req, res) => controller.createSession(req, res));
+router.get('/memory', (req, res) => controller.getMemory(req, res));
 router.get('/sessions/:sessionId/messages', (req, res) => controller.getMessages(req, res));
 router.post('/sessions/:sessionId/messages', aiRateLimitMiddleware, subscriptionMiddleware, (req, res) =>
   controller.sendMessage(req, res),
 );
 
 export { router as chatRoutes };
+

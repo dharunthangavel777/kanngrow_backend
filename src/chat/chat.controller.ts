@@ -35,6 +35,12 @@ export class ChatController {
     res.json(successResponse({ messages }));
   }
 
+  async getMemory(req: Request, res: Response): Promise<void> {
+    const { uid } = req as AuthenticatedRequest;
+    const memory = await chatService.getMemory(uid);
+    res.json(successResponse({ memory }));
+  }
+
   async sendMessage(req: Request, res: Response): Promise<void> {
     const { uid } = req as AuthenticatedRequest;
     const { sessionId } = req.params;
@@ -42,6 +48,6 @@ export class ChatController {
     if (!message?.trim()) throw new AppError('Message cannot be empty', 400);
 
     const result = await chatService.sendMessage(uid, sessionId, message, model);
-    res.json(successResponse(result, result.usedModules));
+    res.json(successResponse(result));
   }
 }
