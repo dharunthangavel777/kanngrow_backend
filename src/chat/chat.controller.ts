@@ -9,8 +9,8 @@ const chatService = new ChatService();
 export class ChatController {
   async createSession(req: Request, res: Response): Promise<void> {
     const { uid } = req as AuthenticatedRequest;
-    const { title } = req.body as { title?: string };
-    const session = await chatService.createSession(uid, title);
+    const { title, isIdea } = req.body as { title?: string; isIdea?: boolean };
+    const session = await chatService.createSession(uid, title, isIdea);
     res.status(201).json(successResponse({ session }));
   }
 

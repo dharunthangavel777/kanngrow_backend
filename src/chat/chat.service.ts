@@ -20,6 +20,7 @@ export interface ChatSessionDoc {
   title: string;
   createdAt: string;
   updatedAt: string;
+  isIdea?: boolean;
 }
 
 export interface MessageDoc {
@@ -45,11 +46,12 @@ export class ChatService {
   private decisionMem    = new DecisionMemory();
 
   // ── Session Management ──────────────────────────────────────────────────────
-  async createSession(uid: string, title?: string): Promise<ChatSessionDoc> {
+  async createSession(uid: string, title?: string, isIdea?: boolean): Promise<ChatSessionDoc> {
     const id = generateId();
     const session: ChatSessionDoc = {
       id, uid, title: title || 'New Chat',
       createdAt: toTimestamp(), updatedAt: toTimestamp(),
+      isIdea: isIdea || false,
     };
     await this.db.collection(collections.users).doc(uid)
       .collection(collections.chatSessions).doc(id).set(session);
