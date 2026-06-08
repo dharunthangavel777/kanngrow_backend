@@ -39,11 +39,27 @@ export class OnboardingController {
       .doc(uid)
       .set({ answers, completedAt: toTimestamp() });
 
-    // Mark user onboarding complete
-    await this.db.collection(collections.users).doc(uid).update({
+    // Extract name if present
+    const fullName = answers['What is your full name?'];
+
+    const userUpdate: any = {
       onboardingComplete: true,
       updatedAt: toTimestamp(),
-    });
+    };
+    if (fullName) {
+      userUpdate.displayName = fullName;
+    }
+
+    // Mark user onboarding complete
+    await this.db.collection(collections.users).doc(uid).update(userUpdate);
+
+    // Update User DNA with the name if present
+    if (fullName) {
+      await this.db.collection(collections.user_dna).doc(uid).set({
+        name: fullName,
+        updatedAt: toTimestamp(),
+      }, { merge: true });
+    }
 
     res.json(successResponse({ message: 'Onboarding complete', answers }));
   }
