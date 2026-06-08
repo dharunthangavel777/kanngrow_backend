@@ -1,9 +1,7 @@
 import { Router } from 'express';
 import { Request, Response } from 'express';
-import { AuthenticatedRequest } from '../../core/middleware/auth.middleware';
-import { ContextBuilder } from '../../ai/context/contextBuilder';
-import { ProfileService } from '../../modules/profile/profile.service';
 import { MemoryService } from '../../ai/memory/memory.service';
+import { DNAService } from '../../ai/dna/dna.service';
 import { BusinessPlanService } from './businessPlan.service';
 import { successResponse } from '../../core/utils/responseFormatter';
 import { authMiddleware } from '../../core/middleware/auth.middleware';
@@ -13,9 +11,8 @@ import { MODULES } from '../../core/constants';
 
 const router = Router();
 const businessPlanService = new BusinessPlanService();
-const profileService = new ProfileService();
-const memory = new MemoryService();
-const contextBuilder = new ContextBuilder();
+const memoryService = new MemoryService();
+const dnaService = new DNAService();
 
 router.use(authMiddleware);
 
@@ -30,11 +27,27 @@ router.post('/generate', aiRateLimitMiddleware, subscriptionMiddleware, async (r
       return;
     }
     const { uid } = subReq;
-    const [profile, facts] = await Promise.all([
-      profileService.getProfile(uid),
-      memory.getMemoryFacts(uid),
+    const [dna, memoryTiers] = await Promise.all([
+      dnaService.getOrCreateDNA(uid),
+      memoryService.getMemoryTiers(uid),
     ]);
-    const { profileSummary } = contextBuilder.build(profile, facts);
+
+    const stageMap: Record<string, string> = {
+      idea: 'Just exploring — no product chosen yet',
+      validating: 'Has an idea, checking if it\'s viable',
+      starting: 'Ready to start, needs execution guidance',
+      growing: 'Already selling, wants to grow faster',
+      scaling: 'Established, wants to scale',
+    };
+    const stageCtx = stageMap[dna?.businessStage ?? 'idea'] ?? 'Exploring';
+    const stateCtx = dna?.state ? `from ${dna.state}` : 'in India';
+    const budgetCtx = dna?.budgetLabel ? `Budget: ${dna.budgetLabel}` : '';
+    const riskCtx = dna?.riskTolerance ? `Prefers ${dna.riskTolerance}-risk.` : '';
+    const nicheCtx = dna?.niche ? `Focus: ${dna.niche}.` : '';
+    const storyCtx = memoryTiers.longTerm?.userStory || '';
+    const factsCtx = memoryTiers.working.slice(0, 8).map(f => f.fact).join(', ');
+
+    const profileSummary = `Founder is ${stageCtx} ${stateCtx}. ${nicheCtx} ${budgetCtx} ${riskCtx} Journey: ${storyCtx}. Working details: ${factsCtx}`;
 
     const result = await businessPlanService.generateBusinessPlan(uid, profileSummary);
 
@@ -55,13 +68,29 @@ router.post('/roadmap', aiRateLimitMiddleware, subscriptionMiddleware, async (re
       return;
     }
     const { uid } = subReq;
-    const [profile, facts] = await Promise.all([
-      profileService.getProfile(uid),
-      memory.getMemoryFacts(uid),
+    const [dna, memoryTiers] = await Promise.all([
+      dnaService.getOrCreateDNA(uid),
+      memoryService.getMemoryTiers(uid),
     ]);
-    const { profileSummary } = contextBuilder.build(profile, facts);
 
-    const goal = profile?.goal || 'Build a profitable store';
+    const stageMap: Record<string, string> = {
+      idea: 'Just exploring — no product chosen yet',
+      validating: 'Has an idea, checking if it\'s viable',
+      starting: 'Ready to start, needs execution guidance',
+      growing: 'Already selling, wants to grow faster',
+      scaling: 'Established, wants to scale',
+    };
+    const stageCtx = stageMap[dna?.businessStage ?? 'idea'] ?? 'Exploring';
+    const stateCtx = dna?.state ? `from ${dna.state}` : 'in India';
+    const budgetCtx = dna?.budgetLabel ? `Budget: ${dna.budgetLabel}` : '';
+    const riskCtx = dna?.riskTolerance ? `Prefers ${dna.riskTolerance}-risk.` : '';
+    const nicheCtx = dna?.niche ? `Focus: ${dna.niche}.` : '';
+    const storyCtx = memoryTiers.longTerm?.userStory || '';
+    const factsCtx = memoryTiers.working.slice(0, 8).map(f => f.fact).join(', ');
+
+    const profileSummary = `Founder is ${stageCtx} ${stateCtx}. ${nicheCtx} ${budgetCtx} ${riskCtx} Journey: ${storyCtx}. Working details: ${factsCtx}`;
+
+    const goal = (dna?.goals && dna.goals.length > 0) ? dna.goals[0] : 'Build a profitable store';
     const result = await businessPlanService.generateRoadmap(uid, profileSummary, goal);
 
     res.json(successResponse(result, [MODULES.ROADMAP_ENGINE, MODULES.BUSINESS_PLANNER]));

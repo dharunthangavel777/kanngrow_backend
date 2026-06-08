@@ -148,7 +148,7 @@ export async function getPlatformPins(): Promise<string> {
       .orderBy('createdAt', 'desc')
       .limit(5)
       .get();
-    _cachedPins = snap.docs.map((d) => `📌 ${(d.data() as { text: string }).text}`);
+    _cachedPins = snap.docs.map((d: any) => `📌 ${(d.data() as { text: string }).text}`);
     _pinsCachedAt = now;
     return _cachedPins.join('\n');
   } catch (err) {
