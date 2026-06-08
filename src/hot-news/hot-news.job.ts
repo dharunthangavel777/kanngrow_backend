@@ -12,9 +12,9 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // ── Main job function ────────────────────────────────────────────────────────
 
-async function runHotNewsJob(): Promise<void> {
+async function runHotNewsJob(force: boolean = false): Promise<void> {
   const jobStart = Date.now();
-  logger.info('[HotNews Job] 🔥 Starting daily Hot News generation...');
+  logger.info(`[HotNews Job] 🔥 Starting daily Hot News generation (force=${force})...`);
 
   try {
     const db = getFirestore();
@@ -58,11 +58,13 @@ async function runHotNewsJob(): Promise<void> {
       const tier     = userData?.subscription?.tier as string;
 
       try {
-        // Skip if already sent today
-        const alreadySent = await hotNewsService.hasReceivedTodayIST(uid);
-        if (alreadySent) {
-          skipped++;
-          continue;
+        if (!force) {
+          // Skip if already sent today
+          const alreadySent = await hotNewsService.hasReceivedTodayIST(uid);
+          if (alreadySent) {
+            skipped++;
+            continue;
+          }
         }
 
         // Get tier config

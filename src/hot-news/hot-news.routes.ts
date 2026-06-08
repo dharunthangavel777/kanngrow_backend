@@ -140,14 +140,15 @@ router.post('/trigger/:uid', async (req: Request, res: Response) => {
 
 // ── POST /admin/hot-news/run-job ─────────────────────────────────────────────
 // Manually fire the full daily job (admin can run it on-demand)
-router.post('/run-job', async (_req: Request, res: Response) => {
+router.post('/run-job', async (req: Request, res: Response) => {
   try {
-    logger.info('[HotNews Routes] Admin manually triggered full Hot News job');
+    const force = req.body.force === true || req.query.force === 'true';
+    logger.info(`[HotNews Routes] Admin manually triggered full Hot News job (force=${force})`);
     // Run in background — don't await (it can take minutes for large user bases)
-    runHotNewsJob().catch(err =>
+    runHotNewsJob(force).catch(err =>
       logger.error(`[HotNews Routes] Manual job error: ${(err as Error).message}`)
     );
-    res.json({ success: true, message: 'Hot News daily job started in background' });
+    res.json({ success: true, message: `Hot News job started in background (force=${force})` });
   } catch (err) {
     res.status(500).json({ success: false, error: 'Failed to start job' });
   }
