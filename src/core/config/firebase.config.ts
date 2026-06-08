@@ -24,10 +24,16 @@ export function initFirebase(): void {
   }
 }
 
+let _db: admin.firestore.Firestore | null = null;
+
 export function getFirestore(): admin.firestore.Firestore {
   if (!admin.apps.length) initFirebase();
   if (firebaseInitError) throw new Error(`Firestore is unavailable: ${firebaseInitError.message}`);
-  return admin.firestore();
+  if (!_db) {
+    _db = admin.firestore();
+    _db.settings({ ignoreUndefinedProperties: true });
+  }
+  return _db;
 }
 
 export function getAuth(): admin.auth.Auth {

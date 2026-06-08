@@ -29,10 +29,12 @@ export class DNAService {
     const dna: UserDNA = {
       ...DEFAULT_DNA,
       uid,
-      name: userName,
       createdAt: now,
       updatedAt: now,
     };
+    if (userName) {
+      dna.name = userName;
+    }
 
     await this.db.collection(collections.user_dna).doc(uid).set(dna);
     logger.debug(`DNA created for user ${uid}`);
