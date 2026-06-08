@@ -40,12 +40,12 @@ async function runHotNewsJob(force: boolean = false): Promise<void> {
     const usersSnap = await db
       .collection(collections.users)
       .where('subscription.tier', 'in', enabledTiers)
-      .where('isDeleted', '!=', true)
-      .limit(settings.maxUsersPerRun)
       .get();
 
-    const users = usersSnap.docs;
-    logger.info(`[HotNews Job] Found ${users.length} eligible users.`);
+    const users = usersSnap.docs
+      .filter(doc => doc.data().isDeleted !== true)
+      .slice(0, settings.maxUsersPerRun);
+    logger.info(`[HotNews Job] Found ${users.length} eligible users (filtered in-memory).`);
 
     let sent    = 0;
     let skipped = 0;
