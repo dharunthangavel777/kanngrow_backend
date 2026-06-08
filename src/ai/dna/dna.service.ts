@@ -44,51 +44,123 @@ export class DNAService {
   // ── Silent DNA Update from a single message exchange ─────────────────────
   async updateFromExchange(uid: string, userMessage: string, aiReply: string): Promise<void> {
     try {
-      const dna = await this.getDNA(uid);
+      const dna = await this.getOrCreateDNA(uid);
+      const language = this.inferLanguage(userMessage);
+      const emotionalState = this.inferEmotionalState(userMessage);
+
+      const updates: Partial<UserDNA> = {
+        language,
+        emotionalState,
+        totalMessages: (dna.totalMessages || 0) + 1,
+        lastActiveAt: toTimestamp(),
+        updatedAt: toTimestamp(),
+      };
+
+      await this.db.collection(collections.user_dna).doc(uid).update(updates);
+    } catch (err) {
+      logger.warn(`Failed to update DNA exchange telemetry for ${uid}: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Update DNA using the explicit answers from onboarding questionnaire.
+   */
+  async updateFromOnboarding(uid: string, answers: Record<string, string>): Promise<UserDNA> {
+    try {
+      const dna = await this.getOrCreateDNA(uid);
       const updates: Partial<UserDNA> = { updatedAt: toTimestamp() };
 
-      const detectedLang = this.inferLanguage(userMessage);
-      if (detectedLang !== 'english' || !dna?.language || dna.language === 'english') {
-        updates.language = detectedLang;
+      // 1. Name
+      const name = answers['What is your full name?'];
+      if (name) updates.name = name;
+
+      // 2. Budget
+      const budgetStr = answers['What is your startup budget?'];
+      if (budgetStr) {
+        if (budgetStr.includes('< ₹50,000') || budgetStr.includes('Lean')) {
+          updates.budget = 25000;
+          updates.budgetLabel = 'Lean (< ₹50,000)';
+          updates.riskTolerance = 'low';
+        } else if (budgetStr.includes('50,000 - 2,00,000') || budgetStr.includes('Medium')) {
+          updates.budget = 125000;
+          updates.budgetLabel = 'Medium (₹50,000 - ₹2,00,000)';
+          updates.riskTolerance = 'medium';
+        } else if (budgetStr.includes('2,00,000 - 5,00,000') || budgetStr.includes('High')) {
+          updates.budget = 350000;
+          updates.budgetLabel = 'High (₹2,00,000 - ₹5,00,000)';
+          updates.riskTolerance = 'high';
+        } else if (budgetStr.includes('> 5,00,000') || budgetStr.includes('Enterprise')) {
+          updates.budget = 750000;
+          updates.budgetLabel = 'Enterprise (> ₹5,00,000)';
+          updates.riskTolerance = 'high';
+        }
       }
 
-      const location = this.extractLocation(userMessage);
-      if (location.state && !dna?.state) updates.state = location.state;
-      if (location.city && !dna?.city) updates.city = location.city;
-
-      const budget = this.extractBudget(userMessage);
-      if (budget && (!dna?.budget || Math.abs(budget - (dna.budget || 0)) > 10000)) {
-        updates.budget = budget;
-        updates.budgetLabel = this.formatBudgetLabel(budget);
+      // 3. Niche & Preferred Model
+      const domains = answers['Choose Business Domains'] || '';
+      const preferredTopics: string[] = [];
+      if (domains) {
+        const split = domains.split(', ');
+        split.forEach(d => preferredTopics.push(d));
+        
+        if (domains.includes('Retail & E-Commerce')) {
+          updates.niche = 'Retail & E-Commerce';
+          const modelStr = answers['Select E-Commerce Focus'] || '';
+          if (modelStr.includes('D2C')) {
+            updates.preferredModel = 'd2c';
+            const d2cNiche = answers['D2C Brand Niche'] || '';
+            if (d2cNiche) updates.niche = d2cNiche;
+          } else if (modelStr.includes('Dropshipping')) {
+            updates.preferredModel = 'dropship';
+          } else if (modelStr.includes('Wholesale')) {
+            updates.preferredModel = 'reseller';
+          }
+        } else if (domains.includes('Technology')) {
+          updates.niche = 'Technology';
+          const techStr = answers['Select Tech Focus Areas'] || '';
+          if (techStr.includes('Software')) {
+            updates.preferredModel = 'saas';
+          }
+        } else if (domains.includes('Food & Agriculture')) {
+          updates.niche = 'Food & Agriculture';
+        } else if (domains.includes('Manufacturing & Hardware')) {
+          updates.niche = 'Manufacturing & Hardware';
+        }
       }
 
-      const stage = this.inferBusinessStage(userMessage, dna?.businessStage);
-      if (stage) updates.businessStage = stage;
-
-      const niche = this.extractNiche(userMessage);
-      if (niche && !dna?.niche) updates.niche = niche;
-
-      const risk = this.inferRiskTolerance(userMessage);
-      if (risk) updates.riskTolerance = risk;
-
-      updates.emotionalState = this.inferEmotionalState(userMessage);
-      updates.totalMessages = (dna?.totalMessages || 0) + 1;
-      updates.lastActiveAt = toTimestamp();
-
-      if (niche && dna) {
-        const topics = new Set([...(dna.preferredTopics || []), niche]);
-        updates.preferredTopics = Array.from(topics).slice(0, 10);
+      // 4. Goals & Response Style
+      const profession = answers['What is your current profession?'];
+      if (profession) {
+        updates.goals = [`Build a business as a ${profession}`];
+        if (profession.includes('Student') || profession.includes('Unemployed')) {
+          updates.decisionSpeed = 'researcher';
+          updates.preferredResponseStyle = 'detailed';
+        } else {
+          updates.decisionSpeed = 'fast';
+          updates.preferredResponseStyle = 'analytical';
+        }
       }
 
-      const style = this.inferResponseStyle(userMessage);
-      if (style) updates.preferredResponseStyle = style;
+      const age = answers['How old are you?'];
+      if (age) {
+        preferredTopics.push(`Demographic context: ${age}`);
+      }
 
-      await this.db.collection(collections.user_dna).doc(uid).set(
-        { ...dna, ...updates },
-        { merge: true }
-      );
+      const time = answers['Time Commitment'];
+      if (time) {
+        preferredTopics.push(`Commitment: ${time}`);
+      }
+
+      updates.preferredTopics = preferredTopics;
+      updates.dnaVersion = (dna.dnaVersion || 1) + 1;
+
+      const finalDna = { ...dna, ...updates };
+      await this.db.collection(collections.user_dna).doc(uid).set(finalDna);
+      logger.info(`DNA updated for user ${uid} from onboarding Q&A`);
+      return finalDna;
     } catch (err) {
-      logger.warn(`DNA update failed for ${uid}: ${(err as Error).message}`);
+      logger.error(`DNA update from onboarding failed for ${uid}: ${(err as Error).message}`);
+      throw err;
     }
   }
 

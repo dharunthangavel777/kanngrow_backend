@@ -6,8 +6,10 @@ import { successResponse } from '../../core/utils/responseFormatter';
 import { toTimestamp } from '../../core/utils/helpers';
 import { notificationService } from '../../core/services/notification.service';
 import { logger } from '../../core/config/logger.config';
+import { DNAService } from '../dna/dna.service';
 
 const generator = new QuestionGenerator();
+const dnaService = new DNAService();
 
 export class OnboardingController {
   private db = getFirestore();
@@ -55,13 +57,8 @@ export class OnboardingController {
     // Mark user onboarding complete
     await this.db.collection(collections.users).doc(uid).update(userUpdate);
 
-    // Update User DNA with the name if present
-    if (fullName) {
-      await this.db.collection(collections.user_dna).doc(uid).set({
-        name: fullName,
-        updatedAt: toTimestamp(),
-      }, { merge: true });
-    }
+    // Update User DNA completely from onboarding answers
+    await dnaService.updateFromOnboarding(uid, answers);
 
     // Send Welcome / Onboarding Complete Notification
     notificationService.send({
