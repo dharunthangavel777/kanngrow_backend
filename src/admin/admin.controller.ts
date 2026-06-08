@@ -2,8 +2,10 @@ import { Request, Response } from 'express';
 import { getFirestore, collections } from '../core/config/firebase.config';
 import { KnowledgeService } from '../knowledge/knowledge.service';
 import { logger } from '../core/config/logger.config';
+import { FcmService } from '../core/services/fcm.service';
 
 const knowledgeService = new KnowledgeService();
+const fcmService = new FcmService();
 
 export class AdminController {
 
@@ -202,25 +204,78 @@ export class AdminController {
         return;
       }
 
-      // Save broadcast to Firestore for later FCM push (future: integrate FCM)
       const broadcastId = `broadcast_${Date.now()}`;
+      const category: string = targetCategory || 'all';
+      const sentAt = new Date().toISOString();
+
+      // 1. Save broadcast record to root notifications collection (for admin history)
       await db.collection(collections.notifications).doc(broadcastId).set({
         id: broadcastId,
         type: 'broadcast',
         title,
         body,
-        targetCategory: targetCategory || 'all',
-        sentAt: new Date().toISOString(),
+        targetCategory: category,
+        sentAt,
         sentBy: 'admin',
       });
 
-      logger.info(`Admin broadcast sent: "${title}" → ${targetCategory || 'all'}`);
+      // 2. Determine target users
+      let usersQuery = db.collection(collections.users).where('isDeleted', '!=', true);
+      if (category === 'premium') {
+        usersQuery = db.collection(collections.users).where('subscription.tier', 'in', ['premium', 'enterprise']);
+      } else if (category === 'active') {
+        usersQuery = db.collection(collections.users).where('isActive', '==', true);
+      }
+      // 'all' and 'new' → all users
+      const usersSnap = await usersQuery.limit(500).get();
+
+      // 3. Write in-app notification to each user's subcollection
+      const batch = db.batch();
+      const uids: string[] = [];
+      usersSnap.docs.forEach((doc) => {
+        uids.push(doc.id);
+        const notifRef = db
+          .collection(collections.users)
+          .doc(doc.id)
+          .collection(collections.notifications)
+          .doc(broadcastId);
+        batch.set(notifRef, {
+          id: broadcastId,
+          type: 'broadcast',
+          title,
+          body,
+          isRead: false,
+          createdAt: sentAt,
+        });
+      });
+      await batch.commit();
+
+      // 4. Send FCM push via topic (fast path) — fall back to multicast
+      const fcmTopic = category === 'all' ? 'all_users' : `${category}_users`;
+      let fcmSent = false;
+      try {
+        fcmSent = await fcmService.sendToTopic(fcmTopic, {
+          title,
+          body,
+          data: { type: 'broadcast', broadcastId },
+        });
+      } catch { /* ignore topic errors, fall back */ }
+
+      if (!fcmSent) {
+        // Multicast fallback using per-user tokens
+        fcmService.sendToUsers(uids, { title, body, data: { type: 'broadcast', broadcastId } })
+          .then((count) => logger.info(`Multicast FCM sent to ${count} users`))
+          .catch((e) => logger.warn(`Multicast FCM error: ${e.message}`));
+      }
+
+      logger.info(`Admin broadcast sent: "${title}" → ${category} (${uids.length} users)`);
       res.status(200).json({
         success: true,
-        message: 'Broadcast saved. Push delivery will trigger via FCM.',
-        data: { broadcastId, title, body },
+        message: `Broadcast delivered to ${uids.length} users${fcmSent ? ' via FCM topic' : ' (multicast queued)'}`,
+        data: { broadcastId, title, body, recipientCount: uids.length },
       });
     } catch (error) {
+      logger.error(`sendBroadcast error: ${(error as Error).message}`);
       res.status(500).json({ success: false, error: 'Failed to send broadcast' });
     }
   };
@@ -527,6 +582,36 @@ export class AdminController {
 
       await db.collection(collections.audit_logs).doc(auditLogId).set(auditLog);
 
+      // 6. Send in-app notification + FCM push to user
+      const tierDisplay = tier.charAt(0).toUpperCase() + tier.slice(1);
+      const notifPayload = {
+        title: `🎉 Your Plan Has Been Upgraded!`,
+        body: `You've been upgraded to the ${tierDisplay} Plan${is_lifetime === true ? ' (Lifetime)' : ''}. New features are now unlocked!`,
+        data: { type: 'plan_upgrade', tier, isLifetime: String(is_lifetime === true) },
+      };
+
+      // In-app notification in Firestore
+      const notifId = `plan_upgrade_${Date.now()}`;
+      await db
+        .collection(collections.users)
+        .doc(id)
+        .collection(collections.notifications)
+        .doc(notifId)
+        .set({
+          id: notifId,
+          type: 'plan_upgrade',
+          title: notifPayload.title,
+          body: notifPayload.body,
+          isRead: false,
+          createdAt: new Date().toISOString(),
+          tier,
+        });
+
+      // FCM push (fire-and-forget)
+      fcmService.sendToUser(id, notifPayload).catch((e) =>
+        logger.warn(`FCM plan upgrade push failed: ${e.message}`)
+      );
+
       logger.info(`Admin ${adminName} manually assigned plan '${tier}' to user ${userName} (${id}). Reason: ${notes}`);
       res.status(200).json({
         success: true,
@@ -542,6 +627,7 @@ export class AdminController {
       res.status(500).json({ success: false, error: 'Failed to assign plan' });
     }
   };
+
 
   // GET /admin/audit-logs — Retrieve chronological audit logs
   public getAuditLogs = async (req: Request, res: Response): Promise<void> => {
