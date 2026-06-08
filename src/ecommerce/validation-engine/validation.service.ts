@@ -71,8 +71,27 @@ export class ValidationService {
   async validateProduct(uid: string, productName: string, profileSummary: string): Promise<ValidationScore> {
     try {
       logger.info(`🔍 Starting validation for: ${productName} (user: ${uid})`);
+
+      const userSnap = await this.db.collection(collections.users).doc(uid).get();
+      const userData = userSnap.exists ? userSnap.data() as Record<string, any> : null;
+      const tier = userData?.subscription?.tier ?? 'free';
+
+      let tierDirective = '';
+      if (tier === 'enterprise') {
+        tierDirective = `\n[ENTERPRISE VALIDATION DIRECTIVES]
+- Provide highly rigorous validation metrics specifically optimized for the Indian e-commerce landscape.
+- Reference specific, established supply clusters (e.g. Surat for synthetic wear, Tiruppur for cotton knitwear, Ludhiana for cardigans, Kanpur/Agra for leather/shoes, Rajkot/Ahmedabad for industrial items).
+- Highlight detailed risk profiles: e-commerce return rates in India (COD returns are often 35-50% on Shopify D2C), shipping transit losses, and platform commission margins.`;
+      } else if (tier === 'premium') {
+        tierDirective = `\n[PREMIUM VALIDATION DIRECTIVES]
+- Focus on gross margin calculation, supplier reliability, and minimum budget required to test.
+- Reference sourcing platforms (IndiaMART, local FPOs) and zero-CAC validation loops.`;
+      }
+
+      const summaryWithTier = `${profileSummary}${tierDirective}`;
+
       const result = await this.ai.completeJSON<ValidationScore>({
-        messages: [{ role: 'user', content: VALIDATION_PROMPT(productName, profileSummary) }],
+        messages: [{ role: 'user', content: VALIDATION_PROMPT(productName, summaryWithTier) }],
         responseFormat: 'json',
         maxTokens: 1500,
         uid,
@@ -105,8 +124,25 @@ export class ValidationService {
   async analyzeCompetitors(uid: string, niche: string, profileSummary: string): Promise<any> {
     try {
       logger.info(`📊 Starting competitor analysis for: ${niche} (user: ${uid})`);
+
+      const userSnap = await this.db.collection(collections.users).doc(uid).get();
+      const userData = userSnap.exists ? userSnap.data() as Record<string, any> : null;
+      const tier = userData?.subscription?.tier ?? 'free';
+
+      let tierDirective = '';
+      if (tier === 'enterprise') {
+        tierDirective = `\n[ENTERPRISE COMPETITORS DIRECTIVES]
+- Focus on building a deep brand moat (exclusive supplier relationships, trademark/branding, customized packaging).
+- Provide precise pricing maps for direct competitors, and SWOT analyses for major established players in India.`;
+      } else if (tier === 'premium') {
+        tierDirective = `\n[PREMIUM COMPETITORS DIRECTIVES]
+- Focus on price positioning, packaging differentiators, and Instagram/organic marketing gaps.`;
+      }
+
+      const summaryWithTier = `${profileSummary}${tierDirective}`;
+
       const result = await this.ai.completeJSON<any>({
-        messages: [{ role: 'user', content: COMPETITOR_ANALYSIS_PROMPT(niche, profileSummary) }],
+        messages: [{ role: 'user', content: COMPETITOR_ANALYSIS_PROMPT(niche, summaryWithTier) }],
         responseFormat: 'json',
         maxTokens: 1500,
         uid,

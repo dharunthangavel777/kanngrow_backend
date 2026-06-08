@@ -73,8 +73,30 @@ export class BusinessPlanService {
   async generateBusinessPlan(uid: string, profileSummary: string): Promise<{ id: string; plan: any }> {
     try {
       logger.info(`📝 Generating business plan for user: ${uid}`);
+
+      const userSnap = await this.db.collection(collections.users).doc(uid).get();
+      const userData = userSnap.exists ? userSnap.data() as Record<string, any> : null;
+      const tier = userData?.subscription?.tier ?? 'free';
+
+      let tierDirective = '';
+      if (tier === 'enterprise') {
+        tierDirective = `\n[ENTERPRISE BLUEPRINT DIRECTIVES]
+- Provide highly detailed, corporate-grade scaling blueprints.
+- Identify specific regional sourcing hubs in India relevant to their niche (e.g. Tiruppur/Erode for knitwear/apparel, Surat for synthetic textiles, Ludhiana for woolens, Agra for leather, Jaipur for handicrafts).
+- Detail precise legal and tax compliance: GST registration requirements, MSME Udyam registration, FSSAI (if food/agri), trademarking advice, and opening a commercial current bank account.
+- Specify clear logistics and fulfillment strategies: Shiprocket, Delhivery B2B/B2C, and Indian Cash-on-Delivery (COD) cost management.
+- Detail launching marketing strategies emphasizing high-impact zero-CAC organic growth loops (Instagram Reels organic funnels, SEO, WhatsApp Business marketing automation) alongside performance marketing.`;
+      } else if (tier === 'premium') {
+        tierDirective = `\n[PREMIUM BLUEPRINT DIRECTIVES]
+- Provide professional operational steps, detailed supplier MOQs, and clear setup costs.
+- Mention basic Indian compliance setups: GST registration, Udyam MSME certificate, and commercial bank account setup.
+- Recommend sourcing via IndiaMART or local wholesale hubs, and structured zero-CAC marketing.`;
+      }
+
+      const summaryWithTier = `${profileSummary}${tierDirective}`;
+
       const result = await this.ai.completeJSON<any>({
-        messages: [{ role: 'user', content: BUSINESS_PLAN_PROMPT(profileSummary) }],
+        messages: [{ role: 'user', content: BUSINESS_PLAN_PROMPT(summaryWithTier) }],
         responseFormat: 'json',
         maxTokens: 2000,
         uid,
@@ -105,8 +127,29 @@ export class BusinessPlanService {
   async generateRoadmap(uid: string, profileSummary: string, goal: string): Promise<{ id: string; roadmap: any }> {
     try {
       logger.info(`🗺️ Generating 90-day roadmap for user: ${uid} (Goal: ${goal})`);
+
+      const userSnap = await this.db.collection(collections.users).doc(uid).get();
+      const userData = userSnap.exists ? userSnap.data() as Record<string, any> : null;
+      const tier = userData?.subscription?.tier ?? 'free';
+
+      let tierDirective = '';
+      if (tier === 'enterprise') {
+        tierDirective = `\n[ENTERPRISE ROADMAP DIRECTIVES]
+- Build a highly structured, corporate-grade 90-day launch plan.
+- Include precise, localized legal and compliance milestones: GST registration, Udyam registration, FSSAI (for food), Current Account activation.
+- Include supply chain milestones: supplier vetting in local clusters (e.g. Tiruppur, Surat), sampling, bulk negotiation.
+- Include zero-CAC marketing setup milestones (Reels scheduling, WhatsApp automations) and launch performance ads.`;
+      } else if (tier === 'premium') {
+        tierDirective = `\n[PREMIUM ROADMAP DIRECTIVES]
+- Build a structured 90-day milestone plan.
+- Include basic compliance registration (GST, Udyam) and local sourcing setup (IndiaMART).
+- Outline organic marketing prep and launching standard listings.`;
+      }
+
+      const summaryWithTier = `${profileSummary}${tierDirective}`;
+
       const result = await this.ai.completeJSON<any>({
-        messages: [{ role: 'user', content: ROADMAP_PROMPT(profileSummary, goal) }],
+        messages: [{ role: 'user', content: ROADMAP_PROMPT(summaryWithTier, goal) }],
         responseFormat: 'json',
         maxTokens: 2000,
         uid,

@@ -47,10 +47,14 @@ export class IdeaGeneratorService {
   private db = getFirestore();
 
   async generateIdeas(uid: string, prompt?: string): Promise<ProductIdea[]> {
-    const [dna, memoryTiers] = await Promise.all([
+    const [dna, memoryTiers, userSnap] = await Promise.all([
       this.dnaService.getOrCreateDNA(uid),
       this.memoryService.getMemoryTiers(uid),
+      this.db.collection(collections.users).doc(uid).get(),
     ]);
+
+    const userData = userSnap.exists ? userSnap.data() as Record<string, any> : null;
+    const tier = userData?.subscription?.tier ?? 'free';
 
     const stageMap: Record<string, string> = {
       idea: 'Just exploring — no product chosen yet',
@@ -69,9 +73,26 @@ export class IdeaGeneratorService {
 
     const profileSummary = `Founder is ${stageCtx} ${stateCtx}. ${nicheCtx} ${budgetCtx} ${riskCtx} Journey: ${storyCtx}. Working details: ${factsCtx}`;
 
-    const context = prompt
-      ? `${profileSummary}\n\nAdditional user request: ${prompt}`
-      : profileSummary;
+    let tierDirective = '';
+    if (tier === 'enterprise') {
+      tierDirective = `\n[ENTERPRISE STRATEGY DIRECTIVES]
+1. Generate highly strategic, scalable product ideas (D2C brand with national/export potential, specialized B2B solutions, or SaaS tools).
+2. Recommend specific Indian manufacturing or wholesale clusters (e.g. Tiruppur/Erode for knitwear/apparel, Surat for textiles, Ludhiana for woolens, Rajkot for machine parts, Agra/Kanpur for leather, Jaipur for handicrafts).
+3. Suggest advanced validation strategies (e.g., pre-launch landing page with Meta Lead Ads, private beta test, influencer seed kits).
+4. Margins must be highly attractive and realistic (60%+).`;
+    } else if (tier === 'premium') {
+      tierDirective = `\n[PREMIUM STRATEGY DIRECTIVES]
+1. Generate high-margin physical or digital product ideas.
+2. Suggest sourcing platforms like IndiaMART or specific regional wholesale hubs.
+3. Suggest actionable zero-CAC validation strategies (e.g., landing page pre-orders, organic Instagram Reels loops, WhatsApp Catalog testing).`;
+    } else {
+      tierDirective = `\n[STANDARD/FREE DIRECTIVES]
+1. Generate practical, straightforward e-commerce products.
+2. Suggest dropshipping, reselling, or simple wholesale sourcing.
+3. Suggest low-effort validation strategies (e.g. sharing with friends, community feedback surveys).`;
+    }
+
+    const context = `${profileSummary}${tierDirective}${prompt ? `\n\nAdditional user request: ${prompt}` : ''}`;
 
     const result = await this.ai.completeJSON<{ ideas: Omit<ProductIdea, 'id' | 'createdAt'>[] }>({
       messages: [

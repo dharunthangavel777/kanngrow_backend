@@ -119,9 +119,11 @@ export class ChatService {
 
     logger.debug(`[V2] uid=${uid} intent=${intent} lang=${languageProfile.detected} niche=${niche}`);
 
+    const tier = (userData as any)?.subscription?.tier ?? 'free';
+
     // Step 3: Build system prompt (async, uses cached data)
     const mergedDna = { ...dna, name: (userData?.displayName as string) || (userData?.name as string) || dna.name };
-    let systemPrompt = await this.contextBuilder.build(mergedDna, memoryTiers, languageProfile, intent, uid);
+    let systemPrompt = await this.contextBuilder.build(mergedDna, memoryTiers, languageProfile, intent, uid, tier);
 
     // Inject Web Search Context
     if (searchResult.sources.length > 0 || searchResult.imageUrl) {
@@ -147,13 +149,14 @@ INSTRUCTIONS:
       content: m.content,
     }));
 
-    // Step 5: Resolve model (Pro users get gpt-4o, free users get gpt-4o-mini)
+    // Step 5: Resolve model based on subscription tier (Enterprise/Premium get gpt-4o, Standard/Free get gpt-4o-mini)
     let modelId: string | undefined;
-    const tier = (userData as any)?.subscription?.tier ?? 'free';
-    if (preferredModel === 'GPT-4' || tier === 'pro') {
+    if (preferredModel === 'GPT-4' || tier === 'enterprise' || tier === 'premium') {
       modelId = 'gpt-4o';
     } else if (preferredModel === 'GPT-3.5') {
       modelId = 'gpt-3.5-turbo';
+    } else {
+      modelId = 'gpt-4o-mini';
     }
     // Default: gpt-4o-mini (fast, affordable, excellent for most queries)
 
