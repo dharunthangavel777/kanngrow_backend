@@ -7,6 +7,8 @@ import { authMiddleware } from '../../core/middleware/auth.middleware';
 import { aiRateLimitMiddleware } from '../../core/middleware/rateLimit.middleware';
 import { subscriptionMiddleware } from '../../core/middleware/subscription.middleware';
 import { MODULES } from '../../core/constants';
+import { notificationService } from '../../core/services/notification.service';
+import { logger } from '../../core/config/logger.config';
 
 const router = Router();
 const service = new IdeaGeneratorService();
@@ -18,6 +20,18 @@ router.post('/generate', aiRateLimitMiddleware, subscriptionMiddleware, async (r
   const { uid } = req as AuthenticatedRequest;
   const { prompt } = req.body as { prompt?: string };
   const ideas = await service.generateIdeas(uid, prompt);
+
+  notificationService.send({
+    uid,
+    type: 'idea.generated',
+    title: '💡 Business Ideas Generated!',
+    body: `We've generated ${ideas.length} custom business ideas based on your DNA.`,
+    data: {
+      count: String(ideas.length),
+      ideaNames: ideas.map(i => i.name).join(', ')
+    }
+  }).catch((e) => logger.warn(`Failed to send idea.generated notif: ${e.message}`));
+
   res.json(successResponse({ ideas }, [MODULES.IDEA_ENGINE, MODULES.MARKET_INTELLIGENCE]));
 });
 

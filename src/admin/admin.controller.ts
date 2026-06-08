@@ -2,6 +2,9 @@ import { Request, Response } from 'express';
 import { getFirestore, collections } from '../core/config/firebase.config';
 import { logger } from '../core/config/logger.config';
 import { FcmService } from '../core/services/fcm.service';
+import { notificationService } from '../core/services/notification.service';
+import { emailService } from '../core/utils/email.utils';
+import { generateId } from '../core/utils/helpers';
 
 const fcmService = new FcmService();
 
@@ -274,6 +277,95 @@ export class AdminController {
     } catch (error) {
       logger.error(`sendBroadcast error: ${(error as Error).message}`);
       res.status(500).json({ success: false, error: 'Failed to send broadcast' });
+    }
+  };
+
+  // POST /admin/email-broadcast
+  public sendEmailBroadcast = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { subject, body, targetCategory, specificEmail } = req.body;
+      const db = getFirestore();
+
+      if (!subject || !body) {
+        res.status(400).json({ success: false, error: 'subject and body are required' });
+        return;
+      }
+
+      const sentAt = new Date().toISOString();
+      let recipients: { email: string; name: string; uid: string }[] = [];
+
+      if (targetCategory === 'specific' && specificEmail) {
+        const userQuery = await db.collection(collections.users).where('email', '==', specificEmail).limit(1).get();
+        if (!userQuery.empty) {
+          const uDoc = userQuery.docs[0];
+          recipients.push({
+            email: specificEmail,
+            name: uDoc.data().displayName || uDoc.data().name || 'User',
+            uid: uDoc.id
+          });
+        } else {
+          recipients.push({ email: specificEmail, name: 'Subscriber', uid: 'raw' });
+        }
+      } else {
+        let usersQuery = db.collection(collections.users).where('isDeleted', '!=', true);
+        if (targetCategory === 'premium') {
+          usersQuery = db.collection(collections.users).where('subscription.tier', 'in', ['premium', 'enterprise']);
+        } else if (targetCategory === 'active') {
+          usersQuery = db.collection(collections.users).where('isActive', '==', true);
+        }
+        const usersSnap = await usersQuery.limit(500).get();
+        usersSnap.docs.forEach((doc) => {
+          const uData = doc.data();
+          if (uData.email) {
+            recipients.push({
+              email: uData.email,
+              name: uData.displayName || uData.name || 'User',
+              uid: doc.id
+            });
+          }
+        });
+      }
+
+      if (recipients.length === 0) {
+        res.status(400).json({ success: false, error: 'No matching recipients found with valid email addresses' });
+        return;
+      }
+
+      let successCount = 0;
+      for (const rec of recipients) {
+        try {
+          await emailService.sendCustomEmail(rec.email, rec.name, subject, body);
+          successCount++;
+
+          if (rec.uid !== 'raw') {
+            const logId = generateId();
+            await db.collection(collections.notification_logs).doc(logId).set({
+              id: logId,
+              uid: rec.uid,
+              userName: rec.name,
+              type: 'email_broadcast',
+              title: subject,
+              body: body.substring(0, 150) + (body.length > 150 ? '...' : ''),
+              sentAt,
+              channels: {
+                inApp: 'skipped',
+                push: 'skipped',
+                email: 'success',
+              }
+            });
+          }
+        } catch (e) {
+          logger.error(`Email broadcast failed for ${rec.email}: ${(e as Error).message}`);
+        }
+      }
+
+      res.status(200).json({
+        success: true,
+        message: `Email broadcast sent to ${successCount} of ${recipients.length} recipients`,
+      });
+    } catch (error) {
+      logger.error(`sendEmailBroadcast error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to send email broadcast' });
     }
   };
 
@@ -579,35 +671,19 @@ export class AdminController {
 
       await db.collection(collections.audit_logs).doc(auditLogId).set(auditLog);
 
-      // 6. Send in-app notification + FCM push to user
+      // 6. Send in-app notification + FCM push + Email to user via unified NotificationService
       const tierDisplay = tier.charAt(0).toUpperCase() + tier.slice(1);
-      const notifPayload = {
+      await notificationService.send({
+        uid: id,
+        type: 'billing.plan_upgraded',
         title: `🎉 Your Plan Has Been Upgraded!`,
         body: `You've been upgraded to the ${tierDisplay} Plan${is_lifetime === true ? ' (Lifetime)' : ''}. New features are now unlocked!`,
-        data: { type: 'plan_upgrade', tier, isLifetime: String(is_lifetime === true) },
-      };
-
-      // In-app notification in Firestore
-      const notifId = `plan_upgrade_${Date.now()}`;
-      await db
-        .collection(collections.users)
-        .doc(id)
-        .collection(collections.notifications)
-        .doc(notifId)
-        .set({
-          id: notifId,
-          type: 'plan_upgrade',
-          title: notifPayload.title,
-          body: notifPayload.body,
-          isRead: false,
-          createdAt: new Date().toISOString(),
+        data: {
           tier,
-        });
-
-      // FCM push (fire-and-forget)
-      fcmService.sendToUser(id, notifPayload).catch((e) =>
-        logger.warn(`FCM plan upgrade push failed: ${e.message}`)
-      );
+          isLifetime: String(is_lifetime === true),
+          notes: notes || 'Manual upgrade',
+        },
+      });
 
       logger.info(`Admin ${adminName} manually assigned plan '${tier}' to user ${userName} (${id}). Reason: ${notes}`);
       res.status(200).json({

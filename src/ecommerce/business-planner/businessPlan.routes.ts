@@ -8,6 +8,8 @@ import { authMiddleware } from '../../core/middleware/auth.middleware';
 import { aiRateLimitMiddleware } from '../../core/middleware/rateLimit.middleware';
 import { subscriptionMiddleware, SubscriptionRequest } from '../../core/middleware/subscription.middleware';
 import { MODULES } from '../../core/constants';
+import { notificationService } from '../../core/services/notification.service';
+import { logger } from '../../core/config/logger.config';
 
 const router = Router();
 const businessPlanService = new BusinessPlanService();
@@ -50,6 +52,18 @@ router.post('/generate', aiRateLimitMiddleware, subscriptionMiddleware, async (r
     const profileSummary = `Founder is ${stageCtx} ${stateCtx}. ${nicheCtx} ${budgetCtx} ${riskCtx} Journey: ${storyCtx}. Working details: ${factsCtx}`;
 
     const result = await businessPlanService.generateBusinessPlan(uid, profileSummary);
+
+    // Send business plan ready notification
+    notificationService.send({
+      uid,
+      type: 'idea.business_plan_ready',
+      title: '📊 Business Plan Ready!',
+      body: `Your complete business plan for "${result.plan.title}" is ready. Check it out now!`,
+      data: {
+        planTitle: result.plan.title,
+        planId: result.id
+      }
+    }).catch(e => logger.warn(`Failed to send business plan notif: ${e.message}`));
 
     res.json(successResponse(result, [MODULES.BUSINESS_PLANNER, MODULES.ROADMAP_ENGINE]));
   } catch (error) {

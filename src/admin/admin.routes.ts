@@ -21,6 +21,7 @@ router.delete('/users/:id', adminController.deleteUser);
 
 // Platform settings / broadcasts
 router.post('/broadcast', adminController.sendBroadcast);
+router.post('/email-broadcast', adminController.sendEmailBroadcast);
 router.post('/settings', adminController.updateAdminSettings);
 
 // ── User Specific SaaS Overrides ──────────────────────────

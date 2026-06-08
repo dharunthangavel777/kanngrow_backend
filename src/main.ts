@@ -24,7 +24,10 @@ import { onboardingRoutes } from './ai/onboarding-engine/onboarding.routes';
 import { marketRoutes } from './market-intelligence/market.routes';
 import adminRoutes from './admin/admin.routes';
 import adminAuthRoutes from './admin/admin.auth.routes';
-import { billingRoutes } from './modules/billing/billing.routes';
+import { billingRoutes }        from './modules/billing/billing.routes';
+import hotNewsAdminRoutes       from './hot-news/hot-news.routes';
+import { startHotNewsJob }      from './hot-news/hot-news.job';
+import { startSubscriptionJob }  from './modules/billing/subscription.job';
 
 // ── Initialize Firebase ───────────────────────────────────
 initFirebase();
@@ -97,6 +100,7 @@ app.use(`${API}/onboarding`, onboardingRoutes);
 app.use(`${API}/market`, marketRoutes);
 app.use(`${API}/admin`, adminRoutes);
 app.use(`${API}/billing`, billingRoutes);
+app.use(`${API}/admin/hot-news`, hotNewsAdminRoutes);
 
 // ── 404 ───────────────────────────────────────────────────
 app.use((_req, res) => {
@@ -111,6 +115,10 @@ app.listen(env.PORT, () => {
   logger.info(`🚀 Kangrow AI Backend running on http://localhost:${env.PORT}`);
   logger.info(`📋 Environment: ${env.NODE_ENV}`);
   logger.info(`🔥 Firebase Project: ${env.FIREBASE_PROJECT_ID}`);
+  // Start daily Hot News cron job
+  startHotNewsJob();
+  // Start daily subscription expiry warnings cron job
+  startSubscriptionJob();
 });
 
 export default app;

@@ -4,6 +4,8 @@ import { QuestionGenerator } from './questionGenerator';
 import { getFirestore, collections } from '../../core/config/firebase.config';
 import { successResponse } from '../../core/utils/responseFormatter';
 import { toTimestamp } from '../../core/utils/helpers';
+import { notificationService } from '../../core/services/notification.service';
+import { logger } from '../../core/config/logger.config';
 
 const generator = new QuestionGenerator();
 
@@ -60,6 +62,15 @@ export class OnboardingController {
         updatedAt: toTimestamp(),
       }, { merge: true });
     }
+
+    // Send Welcome / Onboarding Complete Notification
+    notificationService.send({
+      uid,
+      type: 'user.onboarding_complete',
+      title: '🚀 Welcome to Kanngrow!',
+      body: 'Your AI Business Builder is ready. Let\'s build something amazing.',
+      data: { userName: fullName || 'Entrepreneur' }
+    }).catch((e) => logger.warn(`Failed to send onboarding welcome notification: ${e.message}`));
 
     res.json(successResponse({ message: 'Onboarding complete', answers }));
   }

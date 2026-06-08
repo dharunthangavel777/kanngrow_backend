@@ -5,6 +5,7 @@ import { getFirestore, collections } from '../../core/config/firebase.config';
 import { logger } from '../../core/config/logger.config';
 import { successResponse, errorResponse } from '../../core/utils/responseFormatter';
 import { AuthenticatedRequest } from '../../core/middleware/auth.middleware';
+import { notificationService } from '../../core/services/notification.service';
 
 const stripe = new Stripe(env.STRIPE_SECRET_KEY, {
   apiVersion: '2024-04-10' as any, // Set to standard safe API version
@@ -123,6 +124,18 @@ export class BillingController {
             currentPeriodEnd: new Date(subDetails.current_period_end * 1000).toISOString(),
             promoOverride: false,
           });
+
+          // Send checkout complete notification
+          notificationService.send({
+            uid,
+            type: 'billing.checkout_complete',
+            title: `✅ Subscription Confirmed!`,
+            body: `Welcome to the ${tier.toUpperCase()} plan! Your billing has been successfully configured.`,
+            data: {
+              tier,
+              amount: String(session.amount_total ? session.amount_total / 100 : 0)
+            }
+          }).catch((e) => logger.warn(`Failed to send checkout complete notif: ${e.message}`));
           break;
         }
 
@@ -146,6 +159,18 @@ export class BillingController {
               'subscription.currentPeriodEnd': new Date(sub.current_period_end * 1000).toISOString(),
             });
             logger.info(`SaaS: Updated subscription status to '${status}' for user: ${userDoc.id}`);
+
+            if (status === 'past_due') {
+              notificationService.send({
+                uid: userDoc.id,
+                type: 'billing.past_due',
+                title: `⚠️ Payment Failed`,
+                body: `The payment for your Kanngrow subscription failed. Please update your payment details.`,
+                data: {
+                  stripeSubscriptionId
+                }
+              }).catch((e) => logger.warn(`Failed to send past due notif: ${e.message}`));
+            }
           }
           break;
         }
@@ -162,12 +187,23 @@ export class BillingController {
 
           if (!userQuery.empty) {
             const userDoc = userQuery.docs[0];
+            const oldTier = userDoc.data().subscription?.tier || 'standard';
             await userDoc.ref.update({
               'subscription.tier': 'free',
               'subscription.status': 'canceled',
               'subscription.currentPeriodEnd': new Date(sub.ended_at ? sub.ended_at * 1000 : Date.now()).toISOString(),
             });
             logger.info(`SaaS: Cancelled/revoked subscription for user: ${userDoc.id}`);
+
+            notificationService.send({
+              uid: userDoc.id,
+              type: 'billing.subscription_cancelled',
+              title: `😢 Subscription Cancelled`,
+              body: `Your Kanngrow subscription has been cancelled. We'd love to hear your feedback.`,
+              data: {
+                tier: oldTier
+              }
+            }).catch((e) => logger.warn(`Failed to send subscription cancelled notif: ${e.message}`));
           }
           break;
         }

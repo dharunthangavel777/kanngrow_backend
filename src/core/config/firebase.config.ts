@@ -63,6 +63,10 @@ export const collections = {
   behavior_events:    'behavior_events',
   news_cache:         'news_cache',
 
+  // Hot News feature
+  hot_news_log:       'hot_news_log',      // per-user daily send tracking
+  hot_news_feed:      'hot_news_feed',     // generated items subcollection
+
   // Platform config
   platform_context:   'platform_context',   // Admin-pinnable context (replaces old KB)
   platform_config:    'platform_config',
@@ -72,6 +76,7 @@ export const collections = {
   adminLogs:          'admin_logs',
   adminLockouts:      'admin_lockouts',
   audit_logs:         'audit_logs',
+  notification_logs:  'notification_logs',
 
   // SaaS
   subscription_plans: 'subscription_plans',
