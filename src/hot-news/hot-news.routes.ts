@@ -75,12 +75,13 @@ router.get('/logs', async (req: Request, res: Response) => {
     const snap = await db
       .collection(collections.openai_usage_logs)
       .where('feature', '==', 'hot-news')
-      .where('createdAt', '>=', cutoff)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
       .get();
 
-    const logs = snap.docs.map(d => d.data());
+    let logs = snap.docs.map(d => d.data());
+    logs = logs.filter(l => l.createdAt && l.createdAt >= cutoff);
+    logs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+    logs = logs.slice(0, limit);
+
     res.json({ success: true, data: logs, count: logs.length });
   } catch (err) {
     logger.error(`[HotNews Routes] getLogs error: ${(err as Error).message}`);

@@ -303,12 +303,18 @@ STRICT RULES:
       const usageSnap = await this.db
         .collection(collections.openai_usage_logs)
         .where('feature', '==', 'hot-news')
-        .where('createdAt', '>=', cutoff)
-        .orderBy('createdAt', 'desc')
-        .limit(1000)
         .get();
 
-      const logs = usageSnap.docs.map(d => d.data());
+      let logs = usageSnap.docs.map(d => d.data());
+      
+      // Filter by date cutoff in memory
+      logs = logs.filter(l => l.createdAt && l.createdAt >= cutoff);
+      
+      // Sort descending in memory
+      logs.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+      
+      // Limit to 1000
+      logs = logs.slice(0, 1000);
       const totalSends  = logs.length;
       const totalTokens = logs.reduce((s, l) => s + (l.totalTokens || 0), 0);
 
