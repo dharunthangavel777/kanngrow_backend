@@ -5,6 +5,7 @@ import { MemoryService } from '../ai/memory/memory.service';
 import { ContextBuilder } from '../ai/context/contextBuilder';
 import { ProfileService } from '../modules/profile/profile.service';
 import { DNAService } from '../ai/dna/dna.service';
+import { SearchService } from '../ai/search/search.service';
 import { DecisionMemory } from '../ai/decision/decision.memory';
 import { detectLanguage } from '../ai/language/language.engine';
 import { generateId, toTimestamp } from '../core/utils/helpers';
@@ -44,6 +45,7 @@ export class ChatService {
   private profileService = new ProfileService();
   private dnaService     = new DNAService();
   private decisionMem    = new DecisionMemory();
+  private searchService  = new SearchService();
 
   // ── Session Management ──────────────────────────────────────────────────────
   async createSession(uid: string, title?: string, isIdea?: boolean): Promise<ChatSessionDoc> {
@@ -100,12 +102,13 @@ export class ChatService {
   ): Promise<{ message: MessageDoc; intent: string; language: string }> {
     const startTime = Date.now();
 
-    // Step 1: Parallel data fetch — all Firestore, ZERO API calls
-    const [userSnap, dna, memoryTiers, platformSettings] = await Promise.all([
+    // Step 1: Parallel data fetch — all Firestore + Web Search concurrently!
+    const [userSnap, dna, memoryTiers, platformSettings, searchResult] = await Promise.all([
       this.db.collection(collections.users).doc(uid).get(),
       this.dnaService.getOrCreateDNA(uid),
       this.memory.getMemoryTiers(uid),
       getPlatformSettings(),
+      this.searchService.searchWeb(userMessage),
     ]);
 
     const userData = userSnap.exists ? userSnap.data() as Record<string, unknown> : null;
@@ -118,7 +121,23 @@ export class ChatService {
 
     // Step 3: Build system prompt (async, uses cached data)
     const mergedDna = { ...dna, name: (userData?.displayName as string) || (userData?.name as string) || dna.name };
-    const systemPrompt = await this.contextBuilder.build(mergedDna, memoryTiers, languageProfile, intent, uid);
+    let systemPrompt = await this.contextBuilder.build(mergedDna, memoryTiers, languageProfile, intent, uid);
+
+    // Inject Web Search Context
+    if (searchResult.sources.length > 0 || searchResult.imageUrl) {
+      const searchContextPrompt = `
+\n[WEB SEARCH CONTEXT]
+The following verified web search results were found for the user's message:
+${searchResult.sources.map((s, idx) => `Source ${idx + 1}: Title: "${s.title}", URL: "${s.url}"`).join('\n')}
+${searchResult.imageUrl ? `Image URL: "${searchResult.imageUrl}"` : ''}
+
+INSTRUCTIONS:
+1. Incorporate this web search context to answer the user's message accurately.
+2. At the very bottom of your response, list the sources under a "Sources" heading. Use markdown links, e.g. "- [Title](URL)". Do not make up URLs. Only use the verified URLs from the search context.
+3. If an Image URL is provided in the search context, embed the image on its own separate line anywhere in your response using markdown: "![Image Description](ImageURL)". Ensure the image markdown is on its own separate line.
+`;
+      systemPrompt += searchContextPrompt;
+    }
 
     // Step 4: Load recent conversation history
     const maxHistory = (platformSettings?.maxHistoryLimit as number) ?? 8;
