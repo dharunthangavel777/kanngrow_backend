@@ -58,4 +58,13 @@ export class ChatController {
     const result = await chatService.sendMessage(uid, sessionId, message, model);
     res.json(successResponse(result));
   }
+
+  async deleteSession(req: Request, res: Response): Promise<void> {
+    const { uid } = req as SubscriptionRequest;
+    const { sessionId } = req.params;
+    if (!sessionId) throw new AppError('Session ID required', 400);
+    
+    await chatService.deleteSession(uid, sessionId);
+    res.json(successResponse({ message: 'Session deleted successfully' }));
+  }
 }

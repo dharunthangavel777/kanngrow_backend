@@ -16,6 +16,7 @@ router.get('/sessions/:sessionId/messages', (req, res) => controller.getMessages
 router.post('/sessions/:sessionId/messages', aiRateLimitMiddleware, subscriptionMiddleware, (req, res) =>
   controller.sendMessage(req, res),
 );
+router.delete('/sessions/:sessionId', (req, res) => controller.deleteSession(req, res));
 
 export { router as chatRoutes };
 

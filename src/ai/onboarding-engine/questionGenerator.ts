@@ -16,7 +16,7 @@ export class QuestionGenerator {
   private ai = new OpenAIProvider();
 
   // Maximum AI-generated questions (after static name + location = 2 static)
-  private static readonly MAX_AI_QUESTIONS = 4;
+  private static readonly MAX_AI_QUESTIONS = 15;
 
   /**
    * Generates the next personalized onboarding question using gpt-4o-mini.
