@@ -52,6 +52,36 @@ export async function subscriptionMiddleware(
       return;
     }
 
+    // Bypass subscription checks and daily limits for admin users
+    if (authReq.role === 'admin' || authReq.role === 'super_admin') {
+      authReq.subscription = {
+        tier: 'enterprise',
+        status: 'active',
+        limits: {
+          dailyRequests: 999999,
+          monthlyTokens: 999999999,
+          maxUploadSizeMb: 10240,
+          maxDocumentUploads: 10000,
+          maxStoreCount: 1000,
+          priorityQueue: 'dedicated',
+        },
+        features: {
+          chat: true,
+          competitorResearch: true,
+          seoOptimizations: true,
+          trendAnalysis: true,
+          marketingStrategy: true,
+          contentGenerationSuite: true,
+          customKnowledgeBase: true,
+          apiAccess: true,
+          whiteLabel: true,
+        },
+        allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo'],
+      };
+      next();
+      return;
+    }
+
     // 1. Fetch User document
     const userRef = db.collection(collections.users).doc(uid);
     const userSnap = await userRef.get();

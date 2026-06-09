@@ -1,3 +1,4 @@
+
 import { getOpenAI, openaiConfig } from '../../core/config/openai.config';
 import { logger } from '../../core/config/logger.config';
 import { getFirestore, collections } from '../../core/config/firebase.config';
@@ -136,6 +137,7 @@ export class OpenAIProvider {
     let maxTokens = options.maxTokens ?? openaiConfig.maxTokens;
     maxTokens = Math.ceil(maxTokens * settings.maxTokensMultiplier);
 
+    const startTime = Date.now();
     try {
       const response = await this.client.chat.completions.create({
         model,
@@ -155,17 +157,34 @@ export class OpenAIProvider {
       const completionTokens = response.usage?.completion_tokens ?? 0;
       const totalTokens      = response.usage?.total_tokens      ?? 0;
       const cost             = estimateCost(model, promptTokens, completionTokens);
+      const latencyMs        = Date.now() - startTime;
 
       logger.debug(
-        `OpenAI [${feature}] uid=${uid} model=${model} tokens=${totalTokens} cost=$${cost.toFixed(6)}`
+        `OpenAI [${feature}] uid=${uid} model=${model} tokens=${totalTokens} cost=$${cost.toFixed(6)} latency=${latencyMs}ms`
       );
 
       // Non-blocking fire-and-forget write to Firestore
-      this._logUsage({ uid, feature, model, promptTokens, completionTokens, totalTokens, cost });
+      this._logUsage({ uid, feature, model, promptTokens, completionTokens, totalTokens, cost, status: 'success', latencyMs });
 
       return content;
     } catch (error) {
+      const latencyMs = Date.now() - startTime;
       logger.error(`OpenAI error: ${(error as Error).message}`);
+      
+      // Log failure event
+      this._logUsage({
+        uid,
+        feature,
+        model,
+        promptTokens: 0,
+        completionTokens: 0,
+        totalTokens: 0,
+        cost: 0,
+        status: 'failed',
+        error: (error as Error).message,
+        latencyMs,
+      });
+      
       throw error;
     }
   }
@@ -178,6 +197,7 @@ export class OpenAIProvider {
   private _logUsage(data: {
     uid: string; feature: string; model: string;
     promptTokens: number; completionTokens: number; totalTokens: number; cost: number;
+    status: 'success' | 'failed'; error?: string; latencyMs: number;
   }): void {
     try {
       const db = getFirestore();

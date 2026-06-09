@@ -386,7 +386,7 @@ export class AdminController {
       let logs = snapshot.docs.map((d) => d.data() as {
         uid: string; feature: string; model: string;
         promptTokens: number; completionTokens: number; totalTokens: number;
-        cost: number; createdAt: string;
+        cost: number; createdAt: string; status?: 'success' | 'failed'; error?: string; latencyMs?: number;
       });
 
       // Auto-seed demo data if collection is empty
@@ -400,17 +400,32 @@ export class AdminController {
           for (let j = 0; j < callsToday; j++) {
             const model = models[Math.floor(Math.random() * models.length)];
             const feature = features[Math.floor(Math.random() * features.length)];
-            const promptTokens = Math.floor(Math.random() * 800) + 200;
-            const completionTokens = Math.floor(Math.random() * 600) + 100;
+            const isFailed = Math.random() < 0.05; // 5% failure rate
+
+            const promptTokens = isFailed ? 0 : Math.floor(Math.random() * 800) + 200;
+            const completionTokens = isFailed ? 0 : Math.floor(Math.random() * 600) + 100;
             const totalTokens = promptTokens + completionTokens;
             const pricing: Record<string, { input: number; output: number }> = {
               'gpt-4o': { input: 5.0, output: 15.0 },
               'gpt-4o-mini': { input: 0.15, output: 0.6 },
             };
             const p = pricing[model] ?? pricing['gpt-4o-mini'];
-            const cost = (promptTokens * p.input + completionTokens * p.output) / 1_000_000;
+            const cost = isFailed ? 0 : (promptTokens * p.input + completionTokens * p.output) / 1_000_000;
             const uid = `demo_user_${Math.floor(Math.random() * 5) + 1}`;
-            seeded.push({ uid, feature, model, promptTokens, completionTokens, totalTokens, cost, createdAt: date.toISOString() });
+            
+            seeded.push({
+              uid,
+              feature,
+              model,
+              promptTokens,
+              completionTokens,
+              totalTokens,
+              cost,
+              createdAt: date.toISOString(),
+              status: isFailed ? 'failed' : 'success',
+              error: isFailed ? 'OpenAI API rate limit exceeded or connection timed out.' : '',
+              latencyMs: isFailed ? Math.floor(Math.random() * 500) + 100 : Math.floor(Math.random() * 1800) + 200,
+            });
           }
         }
         logs = seeded;
@@ -420,6 +435,8 @@ export class AdminController {
       const totalCost   = logs.reduce((s, l) => s + (l.cost ?? 0), 0);
       const totalTokens = logs.reduce((s, l) => s + (l.totalTokens ?? 0), 0);
       const totalCalls  = logs.length;
+      const failedCalls = logs.filter(l => l.status === 'failed').length;
+      const failureRate = totalCalls > 0 ? (failedCalls / totalCalls) * 100 : 0.0;
 
       // Daily breakdown for chart (last `days` days)
       const dailyMap: Record<string, { cost: number; tokens: number; calls: number }> = {};
@@ -483,6 +500,8 @@ export class AdminController {
             totalCost: parseFloat(totalCost.toFixed(6)),
             totalTokens,
             totalCalls,
+            failedCalls,
+            failureRate: parseFloat(failureRate.toFixed(2)),
             avgCostPerCall: parseFloat(avgCostPerCall.toFixed(6)),
             avgTokensPerCall: Math.round(avgTokensPerCall),
             periodDays: days,
@@ -800,6 +819,114 @@ export class AdminController {
     } catch (error) {
       logger.error(`managePlatformContext error: ${(error as Error).message}`);
       res.status(500).json({ success: false, error: 'Failed to manage platform context' });
+    }
+  };
+
+  // GET /admin/plans — Retrieve all subscription plans configuration
+  public getSubscriptionPlans = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const db = getFirestore();
+      const snap = await db.collection(collections.subscription_plans).get();
+      const plans = snap.docs.map(doc => doc.data());
+      res.status(200).json({ success: true, data: plans });
+    } catch (error) {
+      logger.error(`getSubscriptionPlans error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to retrieve subscription plans' });
+    }
+  };
+
+  // PUT /admin/plans/:id — Update subscription plan configuration at runtime
+  public updateSubscriptionPlan = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const { id } = req.params;
+      const { name, description, pricing, limits, features, allowedModels } = req.body;
+      const db = getFirestore();
+
+      const planRef = db.collection(collections.subscription_plans).doc(id);
+      const planSnap = await planRef.get();
+
+      if (!planSnap.exists) {
+        res.status(404).json({ success: false, error: `Plan '${id}' not found` });
+        return;
+      }
+
+      const currentData = planSnap.data()!;
+      const updateData: Record<string, any> = {
+        name: name || currentData.name,
+        description: description || currentData.description,
+        updatedAt: new Date().toISOString(),
+        updatedBy: (req as any).uid || 'admin',
+      };
+
+      if (pricing) {
+        updateData.pricing = { ...currentData.pricing, ...pricing };
+      }
+      if (limits) {
+        updateData.limits = { ...currentData.limits, ...limits };
+      }
+      if (features) {
+        updateData.features = { ...currentData.features, ...features };
+      }
+      if (allowedModels) {
+        updateData.allowedModels = allowedModels;
+      }
+
+      await planRef.update(updateData);
+      logger.info(`Admin updated plan configuration for tier: ${id}`);
+      res.status(200).json({ success: true, message: `Plan '${id}' updated successfully`, data: updateData });
+    } catch (error) {
+      logger.error(`updateSubscriptionPlan error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to update subscription plan' });
+    }
+  };
+
+  // GET /admin/ai-logs — Retrieve recent raw OpenAI usage logs
+  public getAILogs = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const db = getFirestore();
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const startAfter = req.query.startAfter as string | undefined;
+
+      let query = db
+        .collection(collections.openai_usage_logs)
+        .orderBy('createdAt', 'desc')
+        .limit(limit);
+
+      if (startAfter) {
+        const cursorDoc = await db.collection(collections.openai_usage_logs).doc(startAfter).get();
+        if (cursorDoc.exists) {
+          query = query.startAfter(cursorDoc);
+        }
+      }
+
+      const snapshot = await query.get();
+      const logs = snapshot.docs.map(doc => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          uid: data.uid || 'anonymous',
+          feature: data.feature || 'unknown',
+          model: data.model || 'unknown',
+          promptTokens: data.promptTokens || 0,
+          completionTokens: data.completionTokens || 0,
+          totalTokens: data.totalTokens || 0,
+          cost: data.cost || 0,
+          status: data.status || 'success',
+          error: data.error || '',
+          latencyMs: data.latencyMs || 0,
+          createdAt: data.createdAt || '',
+        };
+      });
+
+      res.status(200).json({
+        success: true,
+        data: logs,
+        count: logs.length,
+        hasMore: logs.length === limit,
+      });
+    } catch (error) {
+      logger.error(`getAILogs error: ${(error as Error).message}`);
+      res.status(500).json({ success: false, error: 'Failed to fetch AI usage logs' });
     }
   };
 }

@@ -32,6 +32,11 @@ router.get('/audit-logs', adminController.getAuditLogs);
 // ── AI Usage Tracking & Cost Controls ─────────────────────
 router.get('/ai-usage', adminController.getAIUsageStats);
 router.post('/ai-settings', adminController.updateOpenAISettings);
+router.get('/ai-logs', adminController.getAILogs);
+
+// ── Subscription Plans Configuration ──────────────────────
+router.get('/plans', adminController.getSubscriptionPlans);
+router.put('/plans/:id', adminController.updateSubscriptionPlan);
 
 // ── Platform Context (V2 Pins) ─────────────────────────────
 router.post('/platform-context', adminController.managePlatformContext);

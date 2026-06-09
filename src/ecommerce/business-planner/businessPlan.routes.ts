@@ -104,7 +104,7 @@ router.post('/roadmap', aiRateLimitMiddleware, subscriptionMiddleware, async (re
 
     const profileSummary = `Founder is ${stageCtx} ${stateCtx}. ${nicheCtx} ${budgetCtx} ${riskCtx} Journey: ${storyCtx}. Working details: ${factsCtx}`;
 
-    const goal = (dna?.goals && dna.goals.length > 0) ? dna.goals[0] : 'Build a profitable store';
+    const goal = ((dna as any)?.goals && (dna as any).goals.length > 0) ? (dna as any).goals[0] : 'Build a profitable store';
     const result = await businessPlanService.generateRoadmap(uid, profileSummary, goal);
 
     res.json(successResponse(result, [MODULES.ROADMAP_ENGINE, MODULES.BUSINESS_PLANNER]));
