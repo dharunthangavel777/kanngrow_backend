@@ -32,17 +32,21 @@ import { startSubscriptionJob }  from './modules/billing/subscription.job';
 // ── Initialize Firebase ───────────────────────────────────
 initFirebase();
 
-// ── Auto-Seed Database if Empty ───────────────────────────
+// ── Auto-Seed Database if Empty or Incomplete ─────────────
 (async () => {
   try {
     const db = getFirestore();
-    const plansSnap = await db.collection(collections.subscription_plans).limit(1).get();
-    if (plansSnap.empty) {
-      logger.info('SaaS: No subscription plans found in database. Auto-seeding default plans and configurations...');
+    const requiredTiers = ['free', 'standard', 'premium', 'enterprise'];
+    const plansSnap = await db.collection(collections.subscription_plans).get();
+    const existingTiers = plansSnap.docs.map(doc => doc.id);
+    const missingTiers = requiredTiers.filter(tier => !existingTiers.includes(tier));
+
+    if (missingTiers.length > 0) {
+      logger.info(`SaaS: Missing subscription plans (${missingTiers.join(', ')}) in database. Auto-seeding plans and configurations...`);
       const { seedSaaS } = await import('./core/utils/seed_saas');
       await seedSaaS(db);
     } else {
-      logger.info('SaaS: Subscription plans already seeded.');
+      logger.info('SaaS: All standard subscription plans are present in database.');
     }
   } catch (error) {
     logger.error(`⚠️ SaaS Auto-Seeding check failed: ${(error as Error).message}`);
