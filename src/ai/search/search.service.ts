@@ -117,6 +117,71 @@ export class SearchService {
   }
 
   /**
+   * Scrapes google.com image search results for the given query.
+   * Returns only image URLs hosted on google.com (domain-rewritten from gstatic if cached).
+   */
+  private async scrapeGoogleImages(query: string): Promise<string[]> {
+    try {
+      const url = `https://www.google.com/search?q=${encodeURIComponent(query)}&tbm=isch`;
+      const res = await fetch(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+        }
+      });
+      if (!res.ok) return [];
+      const html = await res.text();
+
+      const urls: string[] = [];
+      const regexes = [
+        /https:\/\/encrypted-tbn\d\.gstatic\.com\/images\?q=tbn:[a-zA-Z0-9_\-]+:[a-zA-Z0-9_\-]+/g,
+        /https:\/\/encrypted-tbn\d\.gstatic\.com\/images\?q=tbn:[a-zA-Z0-9_\-]+/g,
+        /https:\/\/www\.google\.com\/images\?q=tbn:[a-zA-Z0-9_\-]+/g
+      ];
+
+      for (const regex of regexes) {
+        let match;
+        regex.lastIndex = 0;
+        while ((match = regex.exec(html)) !== null) {
+          const matchedUrl = match[0];
+          if (!urls.includes(matchedUrl)) {
+            urls.push(matchedUrl);
+          }
+        }
+      }
+
+      // Try finding img tag src attributes as well
+      const imgRegex = /<img[^>]+src=["']([^"']+)["']/g;
+      let imgMatch;
+      while ((imgMatch = imgRegex.exec(html)) !== null) {
+        const src = imgMatch[1];
+        if (src.includes('google.com') || src.includes('gstatic.com')) {
+          if (!urls.includes(src)) {
+            urls.push(src);
+          }
+        }
+      }
+
+      // Convert all matching URLs to google.com domain and filter out other domains
+      const googleUrls = urls
+        .map(u => {
+          let cleaned = u;
+          if (cleaned.startsWith('/')) {
+            cleaned = `https://www.google.com${cleaned}`;
+          }
+          // Rewrite gstatic to google.com
+          cleaned = cleaned.replace(/https:\/\/encrypted-tbn\d\.gstatic\.com/, 'https://www.google.com');
+          return cleaned;
+        })
+        .filter(u => u.startsWith('https://www.google.com/') || u.startsWith('https://google.com/'));
+
+      return googleUrls;
+    } catch (e) {
+      logger.warn(`[SearchService] Google image scraping error: ${(e as Error).message}`);
+      return [];
+    }
+  }
+
+  /**
    * Performs real-time web search and returns verified sources and a relevant image.
    */
   async searchWeb(rawQuery: string): Promise<SearchResult> {
@@ -126,7 +191,7 @@ export class SearchService {
     const sources: SearchSource[] = [];
     let imageUrl: string | undefined = undefined;
 
-    // 1. Query Wikipedia Full-text Search
+    // 1. Query Wikipedia Full-text Search (Sources only)
     try {
       const wikiSearchUrl = `https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(cleanQuery)}&utf8=&format=json`;
       const searchResult = await this.getJson<any>(wikiSearchUrl);
@@ -137,30 +202,12 @@ export class SearchService {
           const pageUrl = `https://en.wikipedia.org/wiki/${encodeURIComponent(title.replace(/\s+/g, '_'))}`;
           sources.push({ title, url: pageUrl });
         }
-
-        // Query page images for the top 3 results until we find a thumbnail
-        for (const item of searchItems) {
-          const imgUrl = `https://en.wikipedia.org/w/api.php?action=query&titles=${encodeURIComponent(item.title)}&prop=pageimages&format=json&pithumbsize=500`;
-          const imgResult = await this.getJson<any>(imgUrl);
-          if (imgResult && imgResult.query && imgResult.query.pages) {
-            const pages = imgResult.query.pages;
-            for (const pageId in pages) {
-              const page = pages[pageId];
-              if (page.thumbnail && page.thumbnail.source) {
-                imageUrl = page.thumbnail.source;
-                logger.debug(`[SearchService] Found Wikipedia image: ${imageUrl}`);
-                break;
-              }
-            }
-          }
-          if (imageUrl) break;
-        }
       }
     } catch (err) {
       logger.warn(`[SearchService] Wikipedia search error: ${(err as Error).message}`);
     }
 
-    // 2. Query DuckDuckGo Instant Answer API (as fallback and for images/extra sources)
+    // 2. Query DuckDuckGo Instant Answer API (Sources only)
     try {
       const ddgUrl = `https://api.duckduckgo.com/?q=${encodeURIComponent(cleanQuery)}&format=json&no_html=1`;
       const ddgResult = await this.getJson<any>(ddgUrl);
@@ -168,21 +215,22 @@ export class SearchService {
         if (ddgResult.AbstractURL && !sources.some(s => s.url === ddgResult.AbstractURL)) {
           sources.unshift({ title: ddgResult.Heading || cleanQuery, url: ddgResult.AbstractURL });
         }
-        if (!imageUrl && ddgResult.Image) {
-          imageUrl = ddgResult.Image.startsWith('http') 
-            ? ddgResult.Image 
-            : `https://duckduckgo.com${ddgResult.Image}`;
-          logger.debug(`[SearchService] Found DuckDuckGo image: ${imageUrl}`);
-        }
       }
     } catch (err) {
       logger.warn(`[SearchService] DDG search error: ${(err as Error).message}`);
     }
 
-    // 3. Fallback Image if no image was found from real search results
-    if (!imageUrl) {
-      imageUrl = this.getFallbackImage(cleanQuery);
-      logger.debug(`[SearchService] Using fallback category image: ${imageUrl}`);
+    // 3. Scrape image strictly from google.com only
+    try {
+      const googleImages = await this.scrapeGoogleImages(cleanQuery);
+      if (googleImages.length > 0) {
+        imageUrl = googleImages[0];
+        logger.debug(`[SearchService] Found Google scraped image: ${imageUrl}`);
+      } else {
+        logger.debug(`[SearchService] No Google images scraped for query "${cleanQuery}"`);
+      }
+    } catch (err) {
+      logger.warn(`[SearchService] Google image search/scraping error: ${(err as Error).message}`);
     }
 
     return {
