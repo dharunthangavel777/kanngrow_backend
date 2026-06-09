@@ -162,6 +162,28 @@ export async function subscriptionMiddleware(
       }
     }
 
+    // Sync resolved plan limits/features onto the user document if not matches (or missing)
+    const cachedLimits = subscription.limits;
+    const cachedFeatures = subscription.features;
+    const cachedModels = subscription.allowedModels;
+
+    const needsSync = !cachedLimits || 
+                      !cachedFeatures || 
+                      !cachedModels ||
+                      JSON.stringify(cachedLimits) !== JSON.stringify(finalLimits) ||
+                      JSON.stringify(cachedFeatures) !== JSON.stringify(finalFeatures) ||
+                      JSON.stringify(cachedModels) !== JSON.stringify(finalModels);
+
+    if (needsSync) {
+      logger.info(`SaaS: Syncing plan limits/features for user ${uid} (tier: ${tier})`);
+      await userRef.update({
+        'subscription.limits': finalLimits,
+        'subscription.features': finalFeatures,
+        'subscription.allowedModels': finalModels,
+        updatedAt: new Date().toISOString()
+      }).catch(err => logger.warn(`SaaS: Failed to sync user limits/features: ${err.message}`));
+    }
+
     // 5. Enforce Limits (Daily Requests Reset & Increment)
     const now = new Date();
     const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
