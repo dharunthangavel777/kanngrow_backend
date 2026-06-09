@@ -25,6 +25,7 @@ import { marketRoutes } from './market-intelligence/market.routes';
 import adminRoutes from './admin/admin.routes';
 import adminAuthRoutes from './admin/admin.auth.routes';
 import { billingRoutes }        from './modules/billing/billing.routes';
+import { feedbackRoutes }       from './modules/feedback/feedback.routes';
 import hotNewsAdminRoutes       from './hot-news/hot-news.routes';
 import { startHotNewsJob }      from './hot-news/hot-news.job';
 import { startSubscriptionJob }  from './modules/billing/subscription.job';
@@ -105,6 +106,7 @@ app.use(`${API}/market`, marketRoutes);
 app.use(`${API}/admin`, adminRoutes);
 app.use(`${API}/billing`, billingRoutes);
 app.use(`${API}/admin/hot-news`, hotNewsAdminRoutes);
+app.use(`${API}/feedback`, feedbackRoutes);
 
 // ── 404 ───────────────────────────────────────────────────
 app.use((_req, res) => {

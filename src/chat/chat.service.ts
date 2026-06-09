@@ -47,7 +47,25 @@ export class ChatService {
   private decisionMem    = new DecisionMemory();
   private searchService  = new SearchService();
 
+  // ── In-Process Cache (5-min TTL) — reduces Firestore reads per message ──────
+  private static _userCache = new Map<string, { data: Record<string, unknown>; expiresAt: number }>();
+  private static readonly CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+  private getCachedUser(uid: string): Record<string, unknown> | null {
+    const entry = ChatService._userCache.get(uid);
+    if (!entry || Date.now() > entry.expiresAt) {
+      ChatService._userCache.delete(uid);
+      return null;
+    }
+    return entry.data;
+  }
+
+  private setCachedUser(uid: string, data: Record<string, unknown>): void {
+    ChatService._userCache.set(uid, { data, expiresAt: Date.now() + ChatService.CACHE_TTL_MS });
+  }
+
   // ── Session Management ──────────────────────────────────────────────────────
+
   async createSession(uid: string, title?: string, isIdea?: boolean): Promise<ChatSessionDoc> {
     const id = generateId();
     const session: ChatSessionDoc = {
@@ -102,16 +120,21 @@ export class ChatService {
   ): Promise<{ message: MessageDoc; intent: string; language: string }> {
     const startTime = Date.now();
 
-    // Step 1: Parallel data fetch — all Firestore + Web Search concurrently!
+    // Step 1: Parallel data fetch — cache-first for user profile, all else concurrent!
+    const cachedUser = this.getCachedUser(uid);
     const [userSnap, dna, memoryTiers, platformSettings, searchResult] = await Promise.all([
-      this.db.collection(collections.users).doc(uid).get(),
+      cachedUser ? Promise.resolve(null) : this.db.collection(collections.users).doc(uid).get(),
       this.dnaService.getOrCreateDNA(uid),
       this.memory.getMemoryTiers(uid),
       getPlatformSettings(),
       this.searchService.searchWeb(userMessage),
     ]);
 
-    const userData = userSnap.exists ? userSnap.data() as Record<string, unknown> : null;
+    let userData: Record<string, unknown> | null = cachedUser;
+    if (!userData && userSnap && userSnap.exists) {
+      userData = userSnap.data() as Record<string, unknown>;
+      this.setCachedUser(uid, userData); // warm the cache
+    }
 
     // Step 2: Fast classifiers (0ms, no API calls)
     const { intent, niche } = this.router.detectIntent(userMessage);
