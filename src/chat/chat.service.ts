@@ -206,7 +206,7 @@ INSTRUCTIONS:
       id: userMsgId, sessionId, uid,
       role: 'user', content: userMessage,
       intent, language: languageProfile.detected,
-      createdAt: toTimestamp(),
+      createdAt: new Date(startTime).toISOString(),
     };
 
     const aiMsgId = generateId();
@@ -215,7 +215,7 @@ INSTRUCTIONS:
       role: 'assistant', content: aiContent,
       intent, language: languageProfile.detected,
       metadata: { language: languageProfile.detected, intent, latencyMs, niche },
-      createdAt: toTimestamp(),
+      createdAt: new Date(Math.max(Date.now(), startTime + 10)).toISOString(),
     };
 
     const sessionRef = this.db.collection(collections.users).doc(uid)

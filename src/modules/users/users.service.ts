@@ -8,7 +8,34 @@ export class UsersService {
   async getUserById(uid: string) {
     const doc = await this.db.collection(collections.users).doc(uid).get();
     if (!doc.exists) throw new AppError('User not found', 404);
-    return doc.data();
+    
+    const data = doc.data()!;
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+
+    if (data.usage) {
+      const lastResetDate = data.usage.dailyRequestResetAt ? data.usage.dailyRequestResetAt.slice(0, 10) : '';
+      if (lastResetDate !== todayStr) {
+        data.usage.dailyRequestCount = 0;
+        data.usage.dailyRequestResetAt = todayStr;
+        await this.db.collection(collections.users).doc(uid).update({
+          'usage.dailyRequestCount': 0,
+          'usage.dailyRequestResetAt': todayStr
+        }).catch(err => console.warn(`Failed to reset daily count in getUserById: ${err.message}`));
+      }
+    } else {
+      data.usage = {
+        dailyRequestCount: 0,
+        dailyRequestResetAt: todayStr,
+        monthlyTokenCount: 0,
+        monthlyTokenResetAt: now.toISOString()
+      };
+      await this.db.collection(collections.users).doc(uid).update({
+        usage: data.usage
+      }).catch(err => console.warn(`Failed to initialize usage in getUserById: ${err.message}`));
+    }
+
+    return data;
   }
 
   async updateUser(uid: string, data: Partial<Record<string, unknown>>) {
