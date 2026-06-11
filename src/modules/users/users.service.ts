@@ -35,6 +35,25 @@ export class UsersService {
       }).catch(err => console.warn(`Failed to initialize usage in getUserById: ${err.message}`));
     }
 
+    // Ensure frontend has the absolute latest allowedModels without waiting for subscriptionMiddleware to sync
+    if (data.subscription && data.subscription.tier) {
+      try {
+        const planSnap = await this.db.collection(collections.subscription_plans).doc(data.subscription.tier).get();
+        if (planSnap.exists) {
+          const planData = planSnap.data()!;
+          let finalModels = planData.allowedModels || ['gpt-4o-mini', 'gpt-3.5-turbo'];
+          
+          const overrideSnap = await this.db.collection(collections.user_overrides).doc(uid).get();
+          if (overrideSnap.exists && overrideSnap.data()!.allowedModels) {
+            finalModels = overrideSnap.data()!.allowedModels;
+          }
+          data.subscription.allowedModels = finalModels;
+        }
+      } catch (err) {
+        console.warn(`Failed to inject allowedModels in getUserById: ${(err as Error).message}`);
+      }
+    }
+
     return data;
   }
 
