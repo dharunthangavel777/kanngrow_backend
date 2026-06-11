@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { getAuth } from '../config/firebase.config';
 import { logger } from '../config/logger.config';
 import { env } from '../config/env.config';
+import { AppError } from './error.middleware';
 
 export interface AuthenticatedRequest extends Request {
   uid: string;
@@ -22,11 +23,18 @@ export async function authMiddleware(
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ success: false, message: 'Unauthorized: No token provided' });
+    next(new AppError('Please log in to continue.', 401, 'ERR_AUTH_UNAUTHORIZED', 'USER_OPERATIONAL', 'ROUTE_LOGIN', false));
     return;
   }
 
   const idToken = authHeader.replace('Bearer ', '');
+
+  // Development bypass (only if specifically enabled and token is mock-token)
+  if (env.NODE_ENV === 'development' && idToken === 'mock-token') {
+    (req as AuthenticatedRequest).uid = 'dev_user_123';
+    next();
+    return;
+  }
 
   try {
     const decodedToken = await getAuth().verifyIdToken(idToken);
@@ -37,6 +45,6 @@ export async function authMiddleware(
     next();
   } catch (error) {
     logger.warn(`Auth failed: ${(error as Error).message}`);
-    res.status(401).json({ success: false, message: 'Unauthorized: Invalid token' });
+    next(new AppError('Your session has expired. Please log in again.', 401, 'ERR_AUTH_EXPIRED', 'USER_OPERATIONAL', 'ROUTE_LOGIN', false));
   }
 }

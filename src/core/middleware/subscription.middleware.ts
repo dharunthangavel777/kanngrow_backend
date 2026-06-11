@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from 'express';
 import { AuthenticatedRequest } from './auth.middleware';
 import { getFirestore, collections } from '../config/firebase.config';
 import { logger } from '../config/logger.config';
+import { AppError } from './error.middleware';
 
 export interface SubscriptionLimits {
   dailyRequests: number;
@@ -48,7 +49,7 @@ export async function subscriptionMiddleware(
     const uid = authReq.uid;
 
     if (!uid) {
-      res.status(401).json({ success: false, error: 'Unauthorized: Missing UID' });
+      next(new AppError('Unauthorized: Missing UID', 401, 'ERR_AUTH_MISSING_UID', 'USER_OPERATIONAL', 'ROUTE_LOGIN', false));
       return;
     }
 
@@ -87,7 +88,7 @@ export async function subscriptionMiddleware(
     const userSnap = await userRef.get();
     
     if (!userSnap.exists) {
-      res.status(404).json({ success: false, error: 'User not found' });
+      next(new AppError('User account not found in database.', 404, 'ERR_USER_NOT_FOUND', 'USER_OPERATIONAL', 'CONTACT_SUPPORT', false));
       return;
     }
 
@@ -134,7 +135,7 @@ export async function subscriptionMiddleware(
     const planSnap = await db.collection(collections.subscription_plans).doc(tier).get();
     if (!planSnap.exists) {
       logger.error(`SaaS: Plan configuration for tier '${tier}' not found in database.`);
-      res.status(500).json({ success: false, error: 'Internal server configuration error' });
+      next(new AppError('Subscription plan configuration error.', 500, 'ERR_DEV_MISCONFIG', 'DEVELOPER', 'CONTACT_SUPPORT', false));
       return;
     }
 
@@ -209,12 +210,7 @@ export async function subscriptionMiddleware(
 
     // Check if limit is reached
     if (dailyCount >= finalLimits.dailyRequests) {
-      res.status(429).json({
-        success: false,
-        error: `Daily limit of ${finalLimits.dailyRequests} requests exceeded for plan '${tier}'. Please upgrade or try again tomorrow.`,
-        code: 'LIMIT_EXCEEDED_DAILY',
-        limits: finalLimits
-      });
+      next(new AppError(`You've run out of AI generation credits for today. Please upgrade your plan.`, 403, 'ERR_CREDITS_EMPTY', 'USER_OPERATIONAL', 'ROUTE_BILLING', false));
       return;
     }
 
@@ -235,6 +231,6 @@ export async function subscriptionMiddleware(
     next();
   } catch (error) {
     logger.error(`SaaS: subscriptionMiddleware error: ${(error as Error).message}`);
-    res.status(500).json({ success: false, error: 'Internal server authorization error' });
+    next(new AppError('Internal server authorization error.', 500, 'ERR_SERVER_CRASH', 'SERVER', 'RETRY', true));
   }
 }
