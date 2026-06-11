@@ -172,16 +172,14 @@ INSTRUCTIONS:
       content: m.content,
     }));
 
-    // Step 5: Resolve model based on subscription tier (Enterprise/Premium get gpt-4o, Standard/Free get gpt-4o-mini)
-    let modelId: string | undefined;
-    if (preferredModel === 'GPT-4' || tier === 'enterprise' || tier === 'premium') {
-      modelId = 'gpt-4o';
-    } else if (preferredModel === 'GPT-3.5') {
-      modelId = 'gpt-3.5-turbo';
-    } else {
-      modelId = 'gpt-4o-mini';
+    // Step 5: Resolve model based on allowed models from user subscription
+    const allowedModels = (userData as any)?.subscription?.allowedModels || ['gpt-4o-mini', 'gpt-3.5-turbo'];
+    let modelId = preferredModel;
+
+    // Validate that the requested model is actually allowed for this user's subscription
+    if (!modelId || !allowedModels.includes(modelId)) {
+      modelId = allowedModels.includes('gpt-4o-mini') ? 'gpt-4o-mini' : allowedModels[0];
     }
-    // Default: gpt-4o-mini (fast, affordable, excellent for most queries)
 
     // Step 6: THE ONE AI CALL ────────────────────────────────────────────────
     const aiContent = await this.ai.complete({
