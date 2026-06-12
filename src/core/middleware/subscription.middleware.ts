@@ -131,18 +131,48 @@ export async function subscriptionMiddleware(
       }
     }
 
-    // 3. Fetch Plan details from subscription_plans
+    // 3. Fetch Plan details from subscription_plans (with fallback defaults if not found in database)
     const planSnap = await db.collection(collections.subscription_plans).doc(tier).get();
-    if (!planSnap.exists) {
-      logger.error(`SaaS: Plan configuration for tier '${tier}' not found in database.`);
-      next(new AppError('Subscription plan configuration error.', 500, 'ERR_DEV_MISCONFIG', 'DEVELOPER', 'CONTACT_SUPPORT', false));
-      return;
-    }
+    let planLimits: SubscriptionLimits;
+    let planFeatures: SubscriptionFeatures;
+    let allowedModels: string[];
 
-    const planData = planSnap.data()!;
-    const planLimits: SubscriptionLimits = planData.limits;
-    const planFeatures: SubscriptionFeatures = planData.features;
-    const allowedModels: string[] = planData.allowedModels || [];
+    if (!planSnap.exists) {
+      logger.warn(`SaaS: Plan configuration for tier '${tier}' not found in database. Falling back to hardcoded defaults.`);
+      
+      const planDefaults: Record<string, { limits: SubscriptionLimits; features: SubscriptionFeatures; allowedModels: string[] }> = {
+        free: {
+          limits: { dailyRequests: 10, monthlyTokens: 50000, maxUploadSizeMb: 5, maxDocumentUploads: 3, maxStoreCount: 1, priorityQueue: 'basic' },
+          features: { chat: true, competitorResearch: false, seoOptimizations: false, trendAnalysis: false, marketingStrategy: false, contentGenerationSuite: false, customKnowledgeBase: false, apiAccess: false, whiteLabel: false },
+          allowedModels: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+        },
+        standard: {
+          limits: { dailyRequests: 100, monthlyTokens: 500000, maxUploadSizeMb: 20, maxDocumentUploads: 15, maxStoreCount: 2, priorityQueue: 'basic' },
+          features: { chat: true, competitorResearch: true, seoOptimizations: true, trendAnalysis: false, marketingStrategy: false, contentGenerationSuite: false, customKnowledgeBase: false, apiAccess: false, whiteLabel: false },
+          allowedModels: ['gpt-4o-mini', 'gpt-3.5-turbo'],
+        },
+        premium: {
+          limits: { dailyRequests: 500, monthlyTokens: 2500000, maxUploadSizeMb: 100, maxDocumentUploads: 100, maxStoreCount: 5, priorityQueue: 'high' },
+          features: { chat: true, competitorResearch: true, seoOptimizations: true, trendAnalysis: true, marketingStrategy: true, contentGenerationSuite: true, customKnowledgeBase: false, apiAccess: false, whiteLabel: false },
+          allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-3.5-turbo'],
+        },
+        enterprise: {
+          limits: { dailyRequests: 5000, monthlyTokens: 25000000, maxUploadSizeMb: 1024, maxDocumentUploads: 1000, maxStoreCount: 50, priorityQueue: 'dedicated' },
+          features: { chat: true, competitorResearch: true, seoOptimizations: true, trendAnalysis: true, marketingStrategy: true, contentGenerationSuite: true, customKnowledgeBase: true, apiAccess: true, whiteLabel: true },
+          allowedModels: ['gpt-4o', 'gpt-4o-mini', 'gpt-4', 'gpt-3.5-turbo'],
+        },
+      };
+
+      const defaults = planDefaults[tier] || planDefaults.free;
+      planLimits = defaults.limits;
+      planFeatures = defaults.features;
+      allowedModels = defaults.allowedModels;
+    } else {
+      const planData = planSnap.data()!;
+      planLimits = planData.limits;
+      planFeatures = planData.features;
+      allowedModels = planData.allowedModels || [];
+    }
 
     // 4. Resolve User-specific limit overrides (if any)
     const overrideSnap = await db.collection(collections.user_overrides).doc(uid).get();

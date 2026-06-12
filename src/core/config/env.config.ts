@@ -37,7 +37,7 @@ export const env = {
 
   // Brevo Email
   BREVO_API_KEY: process.env.BREVO_API_KEY || '',
-  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || 'admin@kangrow.ai',
+  BREVO_SENDER_EMAIL: process.env.BREVO_SENDER_EMAIL || process.env.SMTP_USER || 'admin@kanngrow.ai',
 
   // Stripe Billing
   STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY || 'sk_test_placeholder',

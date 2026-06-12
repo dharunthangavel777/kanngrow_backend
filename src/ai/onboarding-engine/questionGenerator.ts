@@ -112,8 +112,8 @@ export class QuestionGenerator {
 
       return newQuestion;
     } catch (err) {
-      logger.warn(`Question generation failed: ${(err as Error).message}`);
-      return null;
+      logger.error(`Question generation failed: ${(err as Error).message}`);
+      throw err;
     }
   }
 }

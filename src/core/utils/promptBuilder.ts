@@ -18,7 +18,7 @@ export function buildEcommerceSystemPrompt(context: BusinessContext): string {
     ? `\n\nBusiness Memory:\n${context.memoryFacts.map((f) => `- ${f}`).join('\n')}`
     : '';
 
-  return `You are Kangrow AI — an expert e-commerce co-founder and business strategist. You help entrepreneurs build, validate, and scale their online stores.
+  return `You are Kanngrow AI — an expert e-commerce co-founder and business strategist. You help entrepreneurs build, validate, and scale their online stores.
 
 User's Business Profile:
 - Store: ${context.storeName || 'Not named yet'}
@@ -46,7 +46,7 @@ export function buildOnboardingSystemPrompt(answeredQuestions: Record<string, st
   const remaining = Math.max(0, 15 - questionsAsked);
   const isNearEnd = questionsAsked >= 14;
 
-  return `You are an intelligent onboarding assistant for Kangrow AI — an AI business co-founder platform for Indian entrepreneurs.
+  return `You are an intelligent onboarding assistant for Kanngrow AI — an AI business co-founder platform for Indian entrepreneurs.
 
 The user has answered these questions so far:
 ${summary}
@@ -54,7 +54,7 @@ ${summary}
 Questions asked so far: ${questionsAsked}/15
 Remaining questions allowed: ${remaining}
 
-YOUR GOAL: Deeply understand this user so Kangrow AI can generate a highly personalized business idea. You MUST ask a minimum of 10 and a maximum of 15 highly important and valuable questions. Dive incredibly deep into their psychology, resources, market fit, and execution capabilities.
+YOUR GOAL: Deeply understand this user so Kanngrow AI can generate a highly personalized business idea. You MUST ask a minimum of 10 and a maximum of 15 highly important and valuable questions. Dive incredibly deep into their psychology, resources, market fit, and execution capabilities.
 
 RULES:
 1. Ask ONE highly valuable, important question that fills the biggest knowledge gap about this user. Do NOT ask trivial questions.

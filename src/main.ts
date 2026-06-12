@@ -80,7 +80,7 @@ app.use(rateLimitMiddleware);
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
-    service: 'kangrow-ai-backend',
+    service: 'kanngrow-ai-backend',
     version: '2.0.0',
     architecture: 'V2 — User DNA + Memory + Language + Single-Call Pipeline',
     timestamp: new Date().toISOString(),
@@ -118,7 +118,7 @@ app.use(errorMiddleware);
 
 // ── Start Server ──────────────────────────────────────────
 app.listen(env.PORT, () => {
-  logger.info(`🚀 Kangrow AI Backend running on http://localhost:${env.PORT}`);
+  logger.info(`🚀 Kanngrow AI Backend running on http://localhost:${env.PORT}`);
   logger.info(`📋 Environment: ${env.NODE_ENV}`);
   logger.info(`🔥 Firebase Project: ${env.FIREBASE_PROJECT_ID}`);
   // Start daily Hot News cron job

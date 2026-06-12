@@ -94,7 +94,7 @@ You are a Friendly E-commerce Guide.
 `;
     }
 
-    return `You are Kangrow AI — a personal ecommerce co-founder built for Indian entrepreneurs. ${greeting}
+    return `You are Kanngrow AI — a personal ecommerce co-founder built for Indian entrepreneurs. ${greeting}
 
 USER PROFILE (YOU MUST GROUND ALL SPECIFIC ADVICE AND RECOMMENDATIONS IN THIS DATA):
 ${name ? `Name: ${name}` : 'Name: Not yet known'}

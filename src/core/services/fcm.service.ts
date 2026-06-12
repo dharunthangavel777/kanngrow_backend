@@ -35,7 +35,7 @@ export class FcmService {
         android: {
           priority: 'high',
           notification: {
-            channelId: 'kangrow_notifications',
+            channelId: 'kanngrow_notifications',
             priority: 'high',
             sound: 'default',
           },
@@ -84,7 +84,7 @@ export class FcmService {
         android: {
           priority: 'high',
           notification: {
-            channelId: 'kangrow_notifications',
+            channelId: 'kanngrow_notifications',
             sound: 'default',
           },
         },
@@ -134,7 +134,7 @@ export class FcmService {
           data: payload.data || {},
           android: {
             priority: 'high',
-            notification: { channelId: 'kangrow_notifications', sound: 'default' },
+            notification: { channelId: 'kanngrow_notifications', sound: 'default' },
           },
           apns: {
             payload: { aps: { sound: 'default', badge: 1 } },

@@ -8,7 +8,7 @@ const controller = new OnboardingController();
 
 router.use(authMiddleware);
 
-router.post('/next-question', subscriptionMiddleware, (req, res) => controller.getNextQuestion(req, res));
-router.post('/complete', (req, res) => controller.completeOnboarding(req, res));
+router.post('/next-question', subscriptionMiddleware, (req, res, next) => controller.getNextQuestion(req, res, next));
+router.post('/complete', (req, res, next) => controller.completeOnboarding(req, res, next));
 
 export { router as onboardingRoutes };
