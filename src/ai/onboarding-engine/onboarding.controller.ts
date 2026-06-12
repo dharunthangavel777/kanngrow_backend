@@ -51,6 +51,9 @@ export class OnboardingController {
       // Extract name if present
       const fullName = answers['What is your full name?'];
 
+      const userDocRef = this.db.collection(collections.users).doc(uid);
+      const userDocSnap = await userDocRef.get();
+
       const userUpdate: any = {
         onboardingComplete: true,
         updatedAt: toTimestamp(),
@@ -59,8 +62,14 @@ export class OnboardingController {
         userUpdate.displayName = fullName;
       }
 
+      if (!userDocSnap.exists) {
+        userUpdate.uid = uid;
+        userUpdate.email = (req as AuthenticatedRequest).email || '';
+        userUpdate.createdAt = toTimestamp();
+      }
+
       // Mark user onboarding complete
-      await this.db.collection(collections.users).doc(uid).update(userUpdate);
+      await userDocRef.set(userUpdate, { merge: true });
 
       // Update User DNA completely from onboarding answers
       await dnaService.updateFromOnboarding(uid, answers);
