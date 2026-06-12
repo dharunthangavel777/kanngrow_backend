@@ -61,7 +61,20 @@ app.set('trust proxy', 1); // Trust first proxy (e.g., Railway)
 // ── Security & Parsing ────────────────────────────────────
 app.use(helmet());
 app.use(cors({
-  origin: env.ALLOWED_ORIGINS.split(','),
+  origin: (origin, callback) => {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    const allowed = env.ALLOWED_ORIGINS.split(',');
+    const isLocalhost = /^http:\/\/localhost(:\d+)?$/.test(origin) || 
+                        /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(origin);
+    if (allowed.includes(origin) || isLocalhost) {
+      callback(null, origin);
+    } else {
+      callback(null, false);
+    }
+  },
   credentials: true,
 }));
 app.use(express.json({
