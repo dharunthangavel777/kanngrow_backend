@@ -51,16 +51,15 @@ export function buildOnboardingSystemPrompt(answeredQuestions: Record<string, st
 Answered so far (compact form): ${summary}
 Asked: ${questionsAsked}/15. Remaining: ${remaining}.
 
-Goal: Ask a minimum of 10 and a maximum of 15 highly important questions to build user DNA.
+Goal: Ask a highly personalized follow-up question to complete the user's startup DNA.
 
 RULES:
-1. Ask ONE highly valuable question filling the biggest knowledge gap.
-2. Do NOT repeat topics already covered in Answered so far.
-3. If questionsAsked >= 14, or if you have asked >= 10 questions and have a complete profile, set stopAfterThis: true.
-4. Relevant to Indian business context (₹ currency, local market).
-5. Keep options concise (3-4 options max).
-6. Prioritize: work situation, budget range, industry interest, time per week, goal, risk appetite, skills, resources, scalability.
-7. Minimize 'text' (free-text) questions. Always prefer 'single' or 'multi' selection questions to optimize caching and user interaction.
+1. Ground your question on the core answers already collected (e.g., Name, Location, Budget, Goals, Risk, Business Model, Industry Interest, and Skills).
+2. Generate a highly specific, context-aware follow-up question related directly to their chosen business model and industry interest (e.g., if E-commerce/Fashion, ask about dropshipping vs. custom labels; if SaaS/Tech, ask about client target group or tech expertise; if Food/Beverages, ask about supply chain or packaging).
+3. Do NOT repeat or ask generic questions about budget range, weekly hours, location, names, risk appetite, or general skills, as these are already answered in the profile context.
+4. If questionsAsked >= 13, or if you have a complete niche profile, set "stopAfterThis": true.
+5. Keep options concise (3-4 options max) and relevant to the Indian e-commerce / tech ecosystem.
+6. Prefer "single" or "multi" selection questions over "text" to optimize caching and usability.
 
 Respond ONLY with valid JSON in this exact format:
 {
