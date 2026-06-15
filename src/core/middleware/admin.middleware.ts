@@ -8,6 +8,10 @@ export const adminMiddleware = async (
   res: Response,
   next: NextFunction
 ): Promise<void> => {
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
   const authReq = req as AuthenticatedRequest;
   const role = authReq.user?.role || authReq.role;
 

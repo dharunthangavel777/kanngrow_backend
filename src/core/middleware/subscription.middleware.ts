@@ -43,6 +43,10 @@ export async function subscriptionMiddleware(
   res: Response,
   next: NextFunction
 ): Promise<void> {
+  if (req.method === 'OPTIONS') {
+    next();
+    return;
+  }
   try {
     const db = getFirestore();
     const authReq = req as SubscriptionRequest;
