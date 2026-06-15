@@ -3,6 +3,7 @@ import { SubscriptionRequest } from '../core/middleware/subscription.middleware'
 import { ChatService } from './chat.service';
 import { successResponse } from '../core/utils/responseFormatter';
 import { AppError } from '../core/middleware/error.middleware';
+import { logger } from '../core/config/logger.config';
 
 const chatService = new ChatService();
 
@@ -52,11 +53,69 @@ export class ChatController {
     }
     const { uid } = subReq;
     const { sessionId } = req.params;
-    const { message, model } = req.body as { message: string; model?: string };
+    const { message, model, stream } = req.body as { message: string; model?: string; stream?: boolean };
     if (!message?.trim()) throw new AppError('Message cannot be empty', 400);
 
-    const result = await chatService.sendMessage(uid, sessionId, message, model);
-    res.json(successResponse(result));
+    if (stream === true) {
+      try {
+        const streamInfo = await chatService.sendMessageStream(uid, sessionId, message, model);
+
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+
+        // Send metadata first
+        res.write(`data: ${JSON.stringify({
+          type: 'meta',
+          userMessageId: streamInfo.userMsgId,
+          assistantMessageId: streamInfo.aiMsgId,
+          searchResult: streamInfo.searchResult,
+        })}\n\n`);
+
+        let fullContent = '';
+        let promptTokens = 0;
+        let completionTokens = 0;
+
+        for await (const chunk of streamInfo.stream) {
+          const text = chunk.choices[0]?.delta?.content || '';
+          if (text) {
+            fullContent += text;
+            res.write(`data: ${JSON.stringify({ type: 'chunk', content: text })}\n\n`);
+          }
+          if (chunk.usage) {
+            promptTokens = chunk.usage.prompt_tokens || 0;
+            completionTokens = chunk.usage.completion_tokens || 0;
+          }
+        }
+
+        res.write('data: [DONE]\n\n');
+        res.end();
+
+        // Save messages and run background learning in the background
+        chatService.saveStreamedMessages(
+          uid,
+          sessionId,
+          message,
+          fullContent,
+          streamInfo.userMsgId,
+          streamInfo.aiMsgId,
+          streamInfo.intent,
+          streamInfo.language,
+          streamInfo.modelId,
+          streamInfo.startTime,
+          promptTokens,
+          completionTokens,
+        ).catch(err => {
+          logger.error(`Error saving streamed messages: ${err.message}`);
+        });
+      } catch (err) {
+        logger.error(`Streaming failed: ${(err as Error).message}`);
+        res.status(500).json({ success: false, error: 'Streaming generation failed' });
+      }
+    } else {
+      const result = await chatService.sendMessage(uid, sessionId, message, model);
+      res.json(successResponse(result));
+    }
   }
 
   async deleteSession(req: Request, res: Response): Promise<void> {

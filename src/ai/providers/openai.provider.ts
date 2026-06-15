@@ -164,7 +164,7 @@ export class OpenAIProvider {
       );
 
       // Non-blocking fire-and-forget write to Firestore
-      this._logUsage({ uid, feature, model, promptTokens, completionTokens, totalTokens, cost, status: 'success', latencyMs });
+      this.logUsage({ uid, feature, model, promptTokens, completionTokens, totalTokens, cost, status: 'success', latencyMs });
 
       return content;
     } catch (error) {
@@ -172,7 +172,7 @@ export class OpenAIProvider {
       logger.error(`OpenAI error: ${(error as Error).message}`);
       
       // Log failure event
-      this._logUsage({
+      this.logUsage({
         uid,
         feature,
         model,
@@ -194,7 +194,73 @@ export class OpenAIProvider {
     return JSON.parse(text) as T;
   }
 
-  private _logUsage(data: {
+  async completeStream(options: CompletionOptions): Promise<any> {
+    const settings = await getOpenAISettings();
+
+    const {
+      messages,
+      temperature = openaiConfig.temperature,
+      uid = 'anonymous',
+      feature = 'unknown',
+    } = options;
+
+    // Resolve user-allowed models from subscription plan
+    let model = options.model ?? openaiConfig.model;
+    
+    if (uid !== 'anonymous' && uid !== 'system') {
+      try {
+        const db = getFirestore();
+        const userSnap = await db.collection(collections.users).doc(uid).get();
+        if (userSnap.exists) {
+          const userData = userSnap.data()!;
+          const tier = userData.subscription?.tier || 'free';
+          
+          // Check for manual overrides
+          const overrideSnap = await db.collection(collections.user_overrides).doc(uid).get();
+          let allowedModels: string[] = [];
+          if (overrideSnap.exists && overrideSnap.data()?.allowedModels) {
+            allowedModels = overrideSnap.data()!.allowedModels;
+          } else {
+            const planSnap = await db.collection(collections.subscription_plans).doc(tier).get();
+            if (planSnap.exists) {
+              allowedModels = planSnap.data()!.allowedModels || [];
+            }
+          }
+
+          if (allowedModels.length > 0 && !allowedModels.includes(model)) {
+            const fallbackModel = allowedModels[0] || 'gpt-4o-mini';
+            logger.warn(`SaaS: User '${uid}' requested model '${model}' which is not allowed. Downgrading to fallback model '${fallbackModel}'.`);
+            model = fallbackModel;
+          }
+        }
+      } catch (err) {
+        logger.warn(`SaaS: Failed to verify user-allowed models: ${(err as Error).message}. Defaulting to requested model.`);
+      }
+    }
+
+    // Apply platform overrides
+    if (settings.tierDownModel) model = 'gpt-4o-mini';
+
+    let maxTokens = options.maxTokens ?? openaiConfig.maxTokens;
+    maxTokens = Math.ceil(maxTokens * settings.maxTokensMultiplier);
+
+    try {
+      const stream = await this.client.chat.completions.create({
+        model,
+        messages,
+        max_tokens: maxTokens,
+        temperature,
+        stream: true,
+        stream_options: { include_usage: true },
+      });
+      return stream;
+    } catch (error) {
+      logger.error(`OpenAI stream error: ${(error as Error).message}`);
+      throw error;
+    }
+  }
+
+  logUsage(data: {
     uid: string; feature: string; model: string;
     promptTokens: number; completionTokens: number; totalTokens: number; cost: number;
     status: 'success' | 'failed'; error?: string; latencyMs: number;
@@ -208,7 +274,7 @@ export class OpenAIProvider {
         .catch((err: Error) => logger.warn(`Usage log write failed: ${err.message}`));
     } catch (err) {
       // Never throw from log path
-      logger.warn(`_logUsage setup failed: ${(err as Error).message}`);
+      logger.warn(`logUsage setup failed: ${(err as Error).message}`);
     }
   }
 }

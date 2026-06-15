@@ -258,5 +258,181 @@ INSTRUCTIONS:
   async getMemory(uid: string): Promise<any> {
     return this.memory.getMemoryTiers(uid);
   }
+
+  async sendMessageStream(
+    uid: string,
+    sessionId: string,
+    userMessage: string,
+    preferredModel?: string,
+  ): Promise<{
+    userMsgId: string;
+    aiMsgId: string;
+    stream: any;
+    intent: string;
+    language: string;
+    searchResult: any;
+    startTime: number;
+    modelId: string;
+  }> {
+    const startTime = Date.now();
+
+    // Step 1: Parallel data fetch — cache-first for user profile, all else concurrent!
+    const cachedUser = this.getCachedUser(uid);
+    const [userSnap, dna, memoryTiers, platformSettings, searchResult] = await Promise.all([
+      cachedUser ? Promise.resolve(null) : this.db.collection(collections.users).doc(uid).get(),
+      this.dnaService.getOrCreateDNA(uid),
+      this.memory.getMemoryTiers(uid),
+      getPlatformSettings(),
+      this.searchService.searchWeb(userMessage),
+    ]);
+
+    let userData: Record<string, unknown> | null = cachedUser;
+    if (!userData && userSnap && userSnap.exists) {
+      userData = userSnap.data() as Record<string, unknown>;
+      this.setCachedUser(uid, userData); // warm the cache
+    }
+
+    // Step 2: Fast classifiers (0ms, no API calls)
+    const { intent, niche } = this.router.detectIntent(userMessage);
+    const languageProfile   = detectLanguage(userMessage);
+
+    logger.debug(`[V2 Stream] uid=${uid} intent=${intent} lang=${languageProfile.detected} niche=${niche}`);
+
+    const tier = (userData as any)?.subscription?.tier ?? 'free';
+
+    // Step 3: Build system prompt (async, uses cached data)
+    const mergedDna = { ...dna, name: (userData?.displayName as string) || (userData?.name as string) || dna.name };
+    let systemPrompt = await this.contextBuilder.build(mergedDna, memoryTiers, languageProfile, intent, uid, tier);
+
+    // Inject Web Search Context
+    if (searchResult.sources.length > 0 || searchResult.imageUrl) {
+      const searchContextPrompt = `
+\n[WEB SEARCH CONTEXT]
+The following verified web search results were found for the user's message:
+${searchResult.sources.map((s, idx) => `Source ${idx + 1}: Title: "${s.title}", URL: "${s.url}"`).join('\n')}
+${searchResult.imageUrl ? `Image URL: "${searchResult.imageUrl}"` : ''}
+
+INSTRUCTIONS:
+1. Incorporate this web search context to answer the user's message accurately.
+2. At the very bottom of your response, list the sources under a "Sources" heading. Use markdown links, e.g. "- [Title](URL)". Do not make up URLs. Only use the verified URLs from the search context.
+3. If an Image URL is provided in the search context, embed the image on its own separate line anywhere in your response using markdown: "![Image Description](ImageURL)". Ensure the image markdown is on its own separate line.
+`;
+      systemPrompt += searchContextPrompt;
+    }
+
+    // Step 4: Load recent conversation history
+    const maxHistory = (platformSettings?.maxHistoryLimit as number) ?? 8;
+    const history = await this.getMessages(uid, sessionId);
+    const historyMessages: ChatMessage[] = history.slice(-maxHistory).map(m => ({
+      role: m.role,
+      content: m.content,
+    }));
+
+    // Step 5: Resolve model based on allowed models from user subscription
+    const allowedModels = (userData as any)?.subscription?.allowedModels || ['gpt-4o-mini', 'gpt-3.5-turbo'];
+    let modelId: string = preferredModel || '';
+
+    // Validate that the requested model is actually allowed for this user's subscription
+    if (!modelId || !allowedModels.includes(modelId)) {
+      modelId = allowedModels.includes('gpt-4o-mini') ? 'gpt-4o-mini' : allowedModels[0];
+    }
+
+    // Step 6: THE STREAM CALL ────────────────────────────────────────────────
+    const stream = await this.ai.completeStream({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        ...historyMessages,
+        { role: 'user', content: userMessage },
+      ],
+      uid,
+      feature: 'chat-v2-stream',
+      model: modelId,
+      maxTokens: 900,
+      temperature: 0.72,
+    });
+
+    const userMsgId = generateId();
+    const aiMsgId = generateId();
+
+    return {
+      userMsgId,
+      aiMsgId,
+      stream,
+      intent,
+      language: languageProfile.detected,
+      searchResult,
+      startTime,
+      modelId,
+    };
+  }
+
+  async saveStreamedMessages(
+    uid: string,
+    sessionId: string,
+    userMessage: string,
+    aiContent: string,
+    userMsgId: string,
+    aiMsgId: string,
+    intent: string,
+    language: string,
+    modelId: string,
+    startTime: number,
+    promptTokens: number,
+    completionTokens: number,
+  ): Promise<void> {
+    const latencyMs = Date.now() - startTime;
+    logger.info(`[V2 Stream] Completed in ${latencyMs}ms — intent: ${intent}`);
+
+    const userMsg: MessageDoc = {
+      id: userMsgId, sessionId, uid,
+      role: 'user', content: userMessage,
+      intent, language,
+      createdAt: new Date(startTime).toISOString(),
+    };
+
+    const aiMsg: MessageDoc = {
+      id: aiMsgId, sessionId, uid,
+      role: 'assistant', content: aiContent,
+      intent, language,
+      metadata: { language, intent, latencyMs, model: modelId },
+      createdAt: new Date(Math.max(Date.now(), startTime + 10)).toISOString(),
+    };
+
+    const sessionRef = this.db.collection(collections.users).doc(uid)
+      .collection(collections.chatSessions).doc(sessionId);
+
+    await Promise.all([
+      sessionRef.collection(collections.messages).doc(userMsgId).set(userMsg),
+      sessionRef.collection(collections.messages).doc(aiMsgId).set(aiMsg),
+      sessionRef.update({ updatedAt: toTimestamp() }),
+    ]);
+
+    // Background learning
+    const dna = await this.dnaService.getOrCreateDNA(uid);
+    this.runBackgroundLearning(uid, userMessage, aiContent, sessionId, dna.totalMessages || 0);
+
+    // Log OpenAI usage cost
+    const totalTokens = promptTokens + completionTokens;
+    const pricing = {
+      'gpt-4o':          { input: 5.00,   output: 15.00 },
+      'gpt-4o-mini':     { input: 0.15,   output: 0.60  },
+      'gpt-4':           { input: 30.00,  output: 60.00 },
+      'gpt-3.5-turbo':   { input: 0.50,   output: 1.50  },
+    };
+    const modelPricing = (pricing as any)[modelId] ?? pricing['gpt-4o-mini'];
+    const cost = (promptTokens * modelPricing.input + completionTokens * modelPricing.output) / 1_000_000;
+    
+    this.ai.logUsage({
+      uid,
+      feature: 'chat-v2-stream',
+      model: modelId,
+      promptTokens,
+      completionTokens,
+      totalTokens,
+      cost,
+      status: 'success',
+      latencyMs,
+    });
+  }
 }
 
