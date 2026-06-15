@@ -72,6 +72,7 @@ app.use(cors({
     if (allowed.includes(origin) || isLocalhost) {
       callback(null, origin);
     } else {
+      logger.warn(`[CORS Blocked] Request from origin: ${origin}. Allowed origins: ${allowed.join(', ')}`);
       callback(null, false);
     }
   },

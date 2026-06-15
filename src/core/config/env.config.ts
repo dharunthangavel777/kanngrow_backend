@@ -33,7 +33,7 @@ export const env = {
   RATE_LIMIT_MAX_REQUESTS: parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '100', 10),
 
   // CORS
-  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080',
+  ALLOWED_ORIGINS: process.env.ALLOWED_ORIGINS || 'http://localhost:3000,http://localhost:8080,https://kanngrow.netlify.app,https://ai.kanngrow.com,https://kanngrow.com',
 
   // Brevo Email
   BREVO_API_KEY: process.env.BREVO_API_KEY || '',
