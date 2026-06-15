@@ -3,6 +3,7 @@ import { MemoryService } from '../../ai/memory/memory.service';
 import { DNAService } from '../../ai/dna/dna.service';
 import { getFirestore, collections } from '../../core/config/firebase.config';
 import { generateId, toTimestamp } from '../../core/utils/helpers';
+import { logger } from '../../core/config/logger.config';
 
 export interface ProductIdea {
   id: string;
@@ -38,6 +39,7 @@ You MUST return the output as a valid JSON object matching this structure:
 }
 
 Make sure the "competition" field is exactly one of: "Low", "Medium", or "High".
+Keep all values crisp, short, and to the point. Avoid verbose descriptions. Use at most 1 short sentence or phrase for each field.
 `;
 
 export class IdeaGeneratorService {
@@ -102,7 +104,7 @@ export class IdeaGeneratorService {
         },
       ],
       responseFormat: 'json',
-      maxTokens: 2000,
+      maxTokens: 1000,
       temperature: 0.8,
       uid,
       feature: 'idea-generator',
@@ -113,6 +115,14 @@ export class IdeaGeneratorService {
       id: generateId(),
       createdAt: toTimestamp(),
     }));
+
+    // Update hasGeneratedFirstIdeas flag on the user document (asynchronously)
+    if (userData && userData.hasGeneratedFirstIdeas !== true) {
+      this.db.collection(collections.users).doc(uid).update({
+        hasGeneratedFirstIdeas: true,
+        updatedAt: toTimestamp(),
+      }).catch((e) => logger.warn(`Failed to update hasGeneratedFirstIdeas for user ${uid}: ${e.message}`));
+    }
 
     return ideas;
   }

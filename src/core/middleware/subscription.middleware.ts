@@ -238,16 +238,25 @@ export async function subscriptionMiddleware(
       });
     }
 
-    // Check if limit is reached
-    if (dailyCount >= finalLimits.dailyRequests) {
-      next(new AppError(`You've run out of AI generation credits for today. Please upgrade your plan.`, 403, 'ERR_CREDITS_EMPTY', 'USER_OPERATIONAL', 'ROUTE_BILLING', false));
-      return;
-    }
+    // Check if onboarding flow or first-time idea generation (to bypass daily credit limit check)
+    const isOnboardingRoute = req.originalUrl && req.originalUrl.includes('/onboarding/');
+    const isFirstIdeaGen = req.originalUrl && req.originalUrl.includes('/ideas/generate') && userData.hasGeneratedFirstIdeas !== true;
+    const isBypassLimit = isOnboardingRoute || isFirstIdeaGen;
 
-    // Increment request count in Firestore (non-blocking / asynchronous update)
-    userRef.update({
-      'usage.dailyRequestCount': dailyCount + 1
-    }).catch(err => logger.warn(`SaaS: Failed to update user dailyRequestCount: ${err.message}`));
+    if (isBypassLimit) {
+      logger.info(`SaaS: Bypassing subscription daily limit checks for user ${uid} (onboarding: ${isOnboardingRoute}, firstIdeaGen: ${isFirstIdeaGen})`);
+    } else {
+      // Check if limit is reached
+      if (dailyCount >= finalLimits.dailyRequests) {
+        next(new AppError(`You've run out of AI generation credits for today. Please upgrade your plan.`, 403, 'ERR_CREDITS_EMPTY', 'USER_OPERATIONAL', 'ROUTE_BILLING', false));
+        return;
+      }
+
+      // Increment request count in Firestore (non-blocking / asynchronous update)
+      userRef.update({
+        'usage.dailyRequestCount': dailyCount + 1
+      }).catch(err => logger.warn(`SaaS: Failed to update user dailyRequestCount: ${err.message}`));
+    }
 
     // 6. Attach subscription information to the request object
     authReq.subscription = {
